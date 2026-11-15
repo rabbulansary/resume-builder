@@ -1,6 +1,11 @@
+import * as pdfjsLib from '/resumes/vendor/pdf.min.mjs';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/resumes/vendor/pdf.worker.min.mjs';
+
 const root = document.querySelector('#fields');
 const sectionNav = document.querySelector('#section-nav');
 const preview = document.querySelector('#preview');
+const previewPages = document.querySelector('#preview-pages');
 const fit = document.querySelector('#fit');
 const status = document.querySelector('#status');
 const warning = document.querySelector('#validation-warning');
@@ -1143,13 +1148,62 @@ function queuePreview() {
     if (!resume.profile.fullName?.trim()) {
         setBadge('Waiting for details', '');
         status.textContent = 'Enter your name to start the preview.';
-        preview.hidden = true;
+        if (preview) preview.hidden = true;
+        if (previewPages) {
+            previewPages.replaceChildren();
+            previewPages.hidden = true;
+        }
         document.querySelector('#placeholder').hidden = false;
         return;
     }
     setBadge('Updating…', '');
     status.textContent = 'Checking content and page fit.';
     timer = setTimeout(updatePreview, 450);
+}
+
+async function renderPdfPreviewPages(bytes, targetRevision) {
+    if (!previewPages) return;
+    try {
+        const loadingTask = pdfjsLib.getDocument({ data: bytes });
+        const pdfDoc = await loadingTask.promise;
+        if (revision !== targetRevision) return;
+
+        const numPages = pdfDoc.numPages;
+        const pageCanvases = [];
+        const scale = 2.0;
+
+        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+            const page = await pdfDoc.getPage(pageNum);
+            if (revision !== targetRevision) return;
+
+            const viewport = page.getViewport({ scale });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.width = '100%';
+            canvas.style.height = 'auto';
+            canvas.style.display = 'block';
+            canvas.className = 'w-full bg-white shadow-md rounded-xs';
+
+            const ctx = canvas.getContext('2d');
+            await page.render({
+                canvasContext: ctx,
+                viewport,
+            }).promise;
+
+            pageCanvases.push(canvas);
+        }
+
+        if (revision === targetRevision) {
+            previewPages.replaceChildren(...pageCanvases);
+        }
+    } catch (err) {
+        console.warn('PDF.js canvas preview failed, falling back to iframe', err);
+        if (preview) {
+            preview.className = 'absolute inset-0 size-full border-0';
+            preview.hidden = false;
+        }
+    }
 }
 
 async function updatePreview() {
@@ -1164,9 +1218,14 @@ async function updatePreview() {
         const bytes = Uint8Array.from(atob(pdf), (character) => character.charCodeAt(0));
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         previewUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-        preview.src = `${previewUrl}#toolbar=0&navpanes=0&view=FitH`;
-        preview.hidden = false;
+        if (preview) {
+            preview.src = `${previewUrl}#toolbar=0&navpanes=0&view=FitH`;
+        }
+
+        await renderPdfPreviewPages(bytes, current);
+
         document.querySelector('#placeholder').hidden = true;
+        if (previewPages) previewPages.hidden = false;
         showReport(report);
     } catch (error) {
         if (revision === current) {

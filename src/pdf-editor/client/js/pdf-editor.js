@@ -10,10 +10,14 @@ const A4_HEIGHT = 841.89;
 const state = {
     pdfDoc: null,
     pdfBytes: null,
-    pages: [], // Array of { index, width, height, container, bgCanvas, fabricCanvas, isNew }
+    pages: [], // Array of { index, width, height, container, bgCanvas, fabricCanvas, isNew, textItems, lines }
     zoom: 1.0,
     activeTool: 'select',
     activePageIndex: 0,
+    penColor: '#000000',
+    penWidth: 2,
+    highlighterColor: '#fde047',
+    highlighterWidth: 18,
     signPlacement: null, // { pageIndex, x, y }
     showGrid: false,
     selectedObject: null,
@@ -42,6 +46,183 @@ const btnOpenSignPadNow = document.getElementById('btn-open-sign-pad-now');
 const textPlacementBanner = document.getElementById('text-placement-banner');
 const btnCancelTextTool = document.getElementById('btn-cancel-text-tool');
 const btnAddTextCenter = document.getElementById('btn-add-text-center');
+
+// Edit PDF Text Tool Banner Elements
+const editTextPlacementBanner = document.getElementById('edit-text-placement-banner');
+const btnCancelEditTextTool = document.getElementById('btn-cancel-edit-text-tool');
+
+// Pen & Highlighter Controls DOM
+const propPenGroup = document.getElementById('prop-pen-group');
+const propPenColor = document.getElementById('prop-pen-color');
+const propPenWidth = document.getElementById('prop-pen-width');
+const propHighlighterGroup = document.getElementById('prop-highlighter-group');
+const propHighlighterColor = document.getElementById('prop-highlighter-color');
+const propHighlighterWidth = document.getElementById('prop-highlighter-width');
+
+// History Undo / Redo DOM Elements
+const btnUndo = document.getElementById('btn-undo');
+const btnRedo = document.getElementById('btn-redo');
+
+// ---------------------------------------------------------------------------
+// 0. Doubly Linked List History Engine (Undo / Redo Architecture)
+// ---------------------------------------------------------------------------
+class HistoryNode {
+    constructor(action) {
+        this.action = action; // { pageIndex, undo(), redo(), description }
+        this.prev = null;
+        this.next = null;
+    }
+}
+
+class HistoryManager {
+    constructor(maxSize = 50) {
+        this.head = null;
+        this.tail = null;
+        this.current = null;
+        this.size = 0;
+        this.maxSize = maxSize;
+        this.isExecuting = false;
+    }
+
+    push(action) {
+        if (this.isExecuting) return;
+
+        const node = new HistoryNode(action);
+
+        if (!this.current) {
+            // First action in history
+            this.head = node;
+            this.tail = node;
+            this.current = node;
+            this.size = 1;
+        } else {
+            // Truncate forward redo branch (replace next with new node)
+            this.current.next = node;
+            node.prev = this.current;
+            this.current = node;
+            this.tail = node;
+
+            // Recalculate size from head to current
+            let count = 0;
+            let temp = this.head;
+            while (temp) {
+                count++;
+                if (temp === this.current) break;
+                temp = temp.next;
+            }
+            this.size = count;
+
+            // Cap at maxSize by advancing head pointer
+            while (this.size > this.maxSize && this.head && this.head !== this.current) {
+                this.head = this.head.next;
+                if (this.head) this.head.prev = null;
+                this.size--;
+            }
+        }
+
+        this.updateUI();
+    }
+
+    canUndo() {
+        return this.current !== null;
+    }
+
+    canRedo() {
+        return this.current ? this.current.next !== null : this.head !== null;
+    }
+
+    undo() {
+        if (!this.canUndo() || this.isExecuting) return false;
+
+        this.isExecuting = true;
+        try {
+            const action = this.current.action;
+            if (typeof action.pageIndex === 'number' && state.pages[action.pageIndex]) {
+                state.activePageIndex = action.pageIndex;
+            }
+
+            action.undo();
+
+            // Advance pointer backward
+            this.current = this.current.prev;
+        } catch (err) {
+            console.error('Undo operation failed:', err);
+        } finally {
+            this.isExecuting = false;
+            this.updateUI();
+        }
+        return true;
+    }
+
+    redo() {
+        if (!this.canRedo() || this.isExecuting) return false;
+
+        this.isExecuting = true;
+        try {
+            const nodeToRedo = this.current ? this.current.next : this.head;
+            if (!nodeToRedo) return false;
+
+            const action = nodeToRedo.action;
+            if (typeof action.pageIndex === 'number' && state.pages[action.pageIndex]) {
+                state.activePageIndex = action.pageIndex;
+            }
+
+            action.redo();
+
+            // Advance pointer forward
+            this.current = nodeToRedo;
+        } catch (err) {
+            console.error('Redo operation failed:', err);
+        } finally {
+            this.isExecuting = false;
+            this.updateUI();
+        }
+        return true;
+    }
+
+    clear() {
+        this.head = null;
+        this.tail = null;
+        this.current = null;
+        this.size = 0;
+        this.updateUI();
+    }
+
+    updateUI() {
+        const canU = this.canUndo();
+        const canR = this.canRedo();
+        if (btnUndo) {
+            btnUndo.disabled = !canU;
+            btnUndo.classList.toggle('opacity-40', !canU);
+            btnUndo.classList.toggle('cursor-not-allowed', !canU);
+        }
+        if (btnRedo) {
+            btnRedo.disabled = !canR;
+            btnRedo.classList.toggle('opacity-40', !canR);
+            btnRedo.classList.toggle('cursor-not-allowed', !canR);
+        }
+    }
+}
+
+const historyManager = new HistoryManager(50);
+
+function hexToRgba(hex, alpha = 0.45) {
+    if (!hex) return `rgba(254, 240, 138, ${alpha})`;
+    if (hex.startsWith('rgba')) return hex;
+    if (hex.startsWith('rgb')) {
+        return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+    }
+    let c = hex.replace('#', '');
+    if (c.length === 3) {
+        c = c.split('').map((char) => char + char).join('');
+    }
+    const num = parseInt(c, 16);
+    if (Number.isNaN(num)) return `rgba(254, 240, 138, ${alpha})`;
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 function getCanvasPointer(opt, fCanvas) {
     if (opt.scenePoint) {
@@ -313,6 +494,7 @@ function updateUploadedSigPreview() {
 // 3. Document Loader & Multi-Page Viewport Coordinator
 // ---------------------------------------------------------------------------
 async function loadPdfBuffer(buffer, filename = 'document.pdf') {
+    historyManager.clear();
     state.pdfBytes = new Uint8Array(buffer);
     state.pages = [];
     pagesViewport.innerHTML = '';
@@ -333,6 +515,7 @@ async function loadPdfBuffer(buffer, filename = 'document.pdf') {
 }
 
 function startWithBlankA4() {
+    historyManager.clear();
     state.pdfDoc = null;
     state.pdfBytes = null;
     state.pages = [];
@@ -390,7 +573,7 @@ async function createPageElement(pageNum) {
     };
     await page.render(renderContext).promise;
 
-    // Extract text items from PDF.js for click-to-edit
+    // Extract text items from PDF.js for click-to-edit and Edit PDF Text Mode
     const textItems = [];
     try {
         const textContent = await page.getTextContent();
@@ -400,14 +583,30 @@ async function createPageElement(pageNum) {
             const ty = item.transform[5];
             const [vx, vy] = viewport.convertToViewportPoint(tx, ty);
             const fontSize = Math.hypot(item.transform[2], item.transform[3]) || item.height || 12;
+            const fontName = item.fontName || '';
+            const style = textContent.styles && textContent.styles[fontName];
+            const isBold = /bold/i.test(fontName) || (style && /bold/i.test(style.fontFamily));
+            const isItalic = /italic|oblique/i.test(fontName) || (style && /italic|oblique/i.test(style.fontFamily));
+            let fontFamily = 'Arial';
+            if (/times/i.test(fontName) || (style && /times|serif/i.test(style.fontFamily))) {
+                fontFamily = 'Times New Roman';
+            } else if (/courier|mono/i.test(fontName) || (style && /mono/i.test(style.fontFamily))) {
+                fontFamily = 'Courier New';
+            } else if (/georgia/i.test(fontName)) {
+                fontFamily = 'Georgia';
+            }
+
             textItems.push({
                 str: item.str,
                 x: Math.round(vx),
-                y: Math.round(Math.max(0, vy - fontSize)),
+                y: Math.round(Math.max(0, vy - fontSize * 0.85)),
                 width: Math.round(item.width),
-                height: Math.round(Math.max(14, fontSize * 1.25)),
+                height: Math.round(Math.max(12, fontSize * 1.15)),
                 fontSize: Math.max(8, Math.round(fontSize)),
-                fontName: item.fontName,
+                fontFamily,
+                fontWeight: isBold ? 'bold' : 'normal',
+                fontStyle: isItalic ? 'italic' : 'normal',
+                fill: '#000000',
             });
         }
     } catch (e) {
@@ -434,6 +633,8 @@ async function createPageElement(pageNum) {
         preserveObjectStacking: true,
     });
 
+    const lines = groupTextItemsIntoLines(textItems);
+
     const pageData = {
         index: pageIndex,
         width,
@@ -443,67 +644,217 @@ async function createPageElement(pageNum) {
         fabricCanvas,
         isNew: false,
         textItems,
-        textMadeEditable: false,
+        lines,
     };
 
     state.pages.push(pageData);
     bindFabricEvents(fabricCanvas, pageIndex);
 }
 
-function makePageTextEditable(pageIndex) {
-    const pageData = state.pages[pageIndex] || state.pages[0];
-    if (!pageData || !pageData.textItems || pageData.textItems.length === 0) {
-        alert('No text detected on Page ' + ((pageIndex || 0) + 1));
-        return;
-    }
-    const canvas = pageData.fabricCanvas;
-    if (pageData.textMadeEditable) {
-        alert('Existing text on Page ' + (pageData.index + 1) + ' is already editable! Click on any text box to modify it.');
-        return;
-    }
-
-    // Group adjacent items on the same line to form coherent editable sentences
-    const rawItems = [...pageData.textItems].sort((a, b) => (Math.abs(a.y - b.y) < 4 ? a.x - b.x : a.y - b.y));
-    const lines = [];
-    let currentLine = null;
-
-    for (const item of rawItems) {
-        if (!currentLine) {
-            currentLine = { ...item };
-            continue;
+function groupTextItemsIntoLines(items) {
+    if (!items || items.length === 0) return [];
+    const sorted = [...items].sort((a, b) => {
+        if (Math.abs(a.y - b.y) <= 3) {
+            return a.x - b.x;
         }
-        const sameLine = Math.abs(currentLine.y - item.y) <= 5;
-        const adjacent = item.x >= currentLine.x && (item.x - (currentLine.x + currentLine.width)) <= Math.max(20, item.fontSize * 1.6);
-        if (sameLine && adjacent) {
-            currentLine.str += (currentLine.str.endsWith(' ') || item.str.startsWith(' ') ? '' : ' ') + item.str;
-            currentLine.width = (item.x + item.width) - currentLine.x;
-            currentLine.height = Math.max(currentLine.height, item.height);
-        } else {
-            lines.push(currentLine);
-            currentLine = { ...item };
-        }
-    }
-    if (currentLine) lines.push(currentLine);
-
-    lines.forEach((line) => {
-        const textObj = new window.fabric.IText(line.str, {
-            left: Math.round(line.x),
-            top: Math.round(line.y),
-            originX: 'left',
-            originY: 'top',
-            fontSize: line.fontSize,
-            fontFamily: 'Arial',
-            fill: '#000000',
-            backgroundColor: '#ffffff',
-            padding: 1,
-        });
-        canvas.add(textObj);
+        return a.y - b.y;
     });
 
-    pageData.textMadeEditable = true;
+    const lines = [];
+    let current = null;
+
+    for (const item of sorted) {
+        if (!current) {
+            current = { ...item };
+            continue;
+        }
+
+        const sameY = Math.abs(current.y - item.y) <= 4;
+        const currentRight = current.x + current.width;
+        const gap = item.x - currentRight;
+        const maxGap = Math.max(16, current.fontSize * 1.6);
+        const isAdjacent = gap >= -4 && gap <= maxGap;
+        const sameStyle = current.fontWeight === item.fontWeight && current.fontStyle === item.fontStyle;
+
+        if (sameY && isAdjacent && sameStyle) {
+            const needSpace = !current.str.endsWith(' ') && !item.str.startsWith(' ') && gap > 1;
+            current.str += (needSpace ? ' ' : '') + item.str;
+            current.width = (item.x + item.width) - current.x;
+            current.height = Math.max(current.height, item.height);
+        } else {
+            lines.push(current);
+            current = { ...item };
+        }
+    }
+    if (current) lines.push(current);
+
+    return lines;
+}
+
+function findTextLineAt(lines, px, py) {
+    if (!lines || lines.length === 0) return null;
+    let closestLine = null;
+    let minDistance = Infinity;
+
+    for (const line of lines) {
+        if (line.isActivated) continue;
+        const withinX = px >= line.x - 6 && px <= line.x + line.width + 6;
+        const withinY = py >= line.y - 4 && py <= line.y + line.height + 4;
+        if (withinX && withinY) {
+            const centerY = line.y + line.height / 2;
+            const dist = Math.abs(centerY - py);
+            if (dist < minDistance) {
+                minDistance = dist;
+                closestLine = line;
+            }
+        }
+    }
+    return closestLine;
+}
+
+function activateTextLine(pageData, line) {
+    if (!pageData || !line || line.isActivated) return null;
+    const canvas = pageData.fabricCanvas;
+    const bgCanvas = pageData.bgCanvas;
+    if (!canvas || !bgCanvas) return null;
+
+    const bgCtx = bgCanvas.getContext('2d');
+
+    // 1. Snapshot original background pixels before whiteout masking
+    const padX = 2;
+    const padY = 1;
+    const maskLeft = Math.max(0, (line.x - padX) * 2);
+    const maskTop = Math.max(0, (line.y - padY) * 2);
+    const maskW = (line.width + padX * 2) * 2;
+    const maskH = (line.height + padY * 2) * 2;
+
+    const savedBgPixels = bgCtx.getImageData(maskLeft, maskTop, maskW, maskH);
+
+    bgCtx.fillStyle = '#ffffff';
+    bgCtx.fillRect(maskLeft, maskTop, maskW, maskH);
+
+    // 2. Whiteout mask Rect on Fabric canvas so export permanently covers this original text
+    const maskRect = new window.fabric.Rect({
+        left: line.x - padX,
+        top: line.y - padY,
+        width: line.width + padX * 2,
+        height: line.height + padY * 2,
+        fill: '#ffffff',
+        selectable: false,
+        evented: false,
+        originX: 'left',
+        originY: 'top',
+    });
+    canvas.add(maskRect);
+
+    // 3. Live editable IText object for ONLY this selected part
+    const textObj = new window.fabric.IText(line.str, {
+        left: line.x,
+        top: line.y,
+        originX: 'left',
+        originY: 'top',
+        fontSize: line.fontSize,
+        fontFamily: line.fontFamily || 'Arial',
+        fontWeight: line.fontWeight || 'normal',
+        fontStyle: line.fontStyle || 'normal',
+        fill: line.fill || '#000000',
+        backgroundColor: '#ffffff',
+        padding: 2,
+        isOriginalText: true,
+        maskRectRef: maskRect,
+        originalBBox: {
+            x: line.x - padX,
+            y: line.y - padY,
+            width: line.width + padX * 2,
+            height: line.height + padY * 2,
+        },
+    });
+
+    line.isActivated = true;
+    line.fabricObject = textObj;
+
+    canvas.add(textObj);
+    canvas.setActiveObject(textObj);
+    textObj.enterEditing();
     canvas.renderAll();
-    setActiveTool('select');
-    alert(`Converted ${lines.length} text lines on Page ${pageData.index + 1} into editable text boxes! Click on any line to edit text.`);
+
+    // Record Action in History
+    historyManager.push({
+        pageIndex: pageData.index,
+        description: 'Edit PDF Text',
+        undo: () => {
+            bgCtx.putImageData(savedBgPixels, maskLeft, maskTop);
+            canvas.remove(textObj);
+            canvas.remove(maskRect);
+            line.isActivated = false;
+            line.fabricObject = null;
+            canvas.discardActiveObject();
+            canvas.renderAll();
+            onSelectionCleared();
+        },
+        redo: () => {
+            bgCtx.fillStyle = '#ffffff';
+            bgCtx.fillRect(maskLeft, maskTop, maskW, maskH);
+            canvas.add(maskRect);
+            canvas.add(textObj);
+            line.isActivated = true;
+            line.fabricObject = textObj;
+            canvas.setActiveObject(textObj);
+            canvas.renderAll();
+        },
+    });
+
+    return textObj;
+}
+
+function deleteSelectedObject() {
+    const canvas = getActiveCanvas();
+    if (!canvas || !state.selectedObject) return;
+    const obj = state.selectedObject;
+    const pageIndex = state.activePageIndex;
+
+    let createdMask = null;
+    if (obj.isOriginalText && obj.originalBBox) {
+        if (!obj.maskRectRef) {
+            createdMask = new window.fabric.Rect({
+                left: obj.originalBBox.x,
+                top: obj.originalBBox.y,
+                width: obj.originalBBox.width,
+                height: obj.originalBBox.height,
+                fill: '#ffffff',
+                selectable: false,
+                evented: false,
+                originX: 'left',
+                originY: 'top',
+            });
+            canvas.add(createdMask);
+            canvas.sendObjectToBack(createdMask);
+        }
+    }
+    canvas.remove(obj);
+    onSelectionCleared();
+    canvas.renderAll();
+
+    historyManager.push({
+        pageIndex,
+        description: 'Delete Object',
+        undo: () => {
+            if (createdMask) canvas.remove(createdMask);
+            canvas.add(obj);
+            canvas.setActiveObject(obj);
+            canvas.renderAll();
+        },
+        redo: () => {
+            if (createdMask) {
+                canvas.add(createdMask);
+                canvas.sendObjectToBack(createdMask);
+            }
+            canvas.remove(obj);
+            canvas.discardActiveObject();
+            onSelectionCleared();
+            canvas.renderAll();
+        },
+    });
 }
 
 function appendBlankPage() {
@@ -590,6 +941,9 @@ function deletePage(pageIndex) {
 // 4. Fabric.js Canvas Event Binding & Tools Interaction
 // ---------------------------------------------------------------------------
 function bindFabricEvents(fCanvas, pageIndex) {
+    let dragMarqueeEl = null;
+    let dragStart = null;
+
     fCanvas.on('mouse:down', (opt) => {
         state.activePageIndex = pageIndex;
         const pointer = getCanvasPointer(opt, fCanvas);
@@ -602,6 +956,18 @@ function bindFabricEvents(fCanvas, pageIndex) {
                 y: pointer.y,
             };
             openSignatureModal();
+            return;
+        }
+
+        // If Edit PDF Text tool is active: user selects a part of the PDF by clicking or dragging a box
+        if (state.activeTool === 'edit-text') {
+            if (opt.target && (opt.target.type === 'i-text' || opt.target.type === 'text')) {
+                fCanvas.setActiveObject(opt.target);
+                opt.target.enterEditing();
+                return;
+            }
+            dragStart = { x: pointer.x, y: pointer.y };
+            fCanvas.selection = false;
             return;
         }
 
@@ -632,28 +998,237 @@ function bindFabricEvents(fCanvas, pageIndex) {
             }
 
             // Otherwise place brand new text with top-left right at clicked coordinate!
+            const fontFamily = propFontFamily?.value || 'Arial';
+            const fontSize = parseInt(propFontSize?.value, 10) || 14;
+            const fill = propTextColor?.value || '#000000';
+
             const textObj = new window.fabric.IText('Type text here', {
                 left: Math.round(pointer.x),
                 top: Math.round(pointer.y),
                 originX: 'left',
                 originY: 'top',
-                fontFamily: 'Arial',
-                fontSize: 14,
-                fill: '#000000',
+                fontFamily,
+                fontSize,
+                fill,
             });
             fCanvas.add(textObj);
             fCanvas.setActiveObject(textObj);
             textObj.enterEditing();
             textObj.selectAll();
             fCanvas.renderAll();
+
+            historyManager.push({
+                pageIndex,
+                description: 'Add Text Box',
+                undo: () => {
+                    fCanvas.remove(textObj);
+                    fCanvas.discardActiveObject();
+                    fCanvas.renderAll();
+                    onSelectionCleared();
+                },
+                redo: () => {
+                    fCanvas.add(textObj);
+                    fCanvas.setActiveObject(textObj);
+                    fCanvas.renderAll();
+                },
+            });
+
             setActiveTool('select');
             return;
+        }
+    });
+
+    fCanvas.on('mouse:move', (opt) => {
+        const pointer = getCanvasPointer(opt, fCanvas);
+        const pageData = state.pages[pageIndex];
+
+        if (state.activeTool === 'edit-text') {
+            if (dragStart) {
+                const x = Math.min(dragStart.x, pointer.x);
+                const y = Math.min(dragStart.y, pointer.y);
+                const w = Math.abs(pointer.x - dragStart.x);
+                const h = Math.abs(pointer.y - dragStart.y);
+
+                if (w > 4 || h > 4) {
+                    if (!dragMarqueeEl && pageData && pageData.container) {
+                        dragMarqueeEl = document.createElement('div');
+                        dragMarqueeEl.className = 'absolute border-2 border-indigo-600 bg-indigo-500/15 pointer-events-none rounded-xs z-30 transition-none shadow-xs';
+                        pageData.container.appendChild(dragMarqueeEl);
+                    }
+                    if (dragMarqueeEl) {
+                        dragMarqueeEl.style.left = `${x}px`;
+                        dragMarqueeEl.style.top = `${y}px`;
+                        dragMarqueeEl.style.width = `${w}px`;
+                        dragMarqueeEl.style.height = `${h}px`;
+                    }
+                }
+                return;
+            }
+
+            // Hover indicator over unactivated text
+            if (!opt.target && pageData && pageData.lines) {
+                const line = findTextLineAt(pageData.lines, pointer.x, pointer.y);
+                if (line) {
+                    fCanvas.defaultCursor = 'text';
+                    return;
+                }
+            }
+            fCanvas.defaultCursor = 'default';
+        }
+    });
+
+    fCanvas.on('mouse:up', (opt) => {
+        if (state.activeTool === 'edit-text' && dragStart) {
+            const pointer = getCanvasPointer(opt, fCanvas);
+            const pageData = state.pages[pageIndex];
+            const x = Math.min(dragStart.x, pointer.x);
+            const y = Math.min(dragStart.y, pointer.y);
+            const w = Math.abs(pointer.x - dragStart.x);
+            const h = Math.abs(pointer.y - dragStart.y);
+
+            if (dragMarqueeEl) {
+                dragMarqueeEl.remove();
+                dragMarqueeEl = null;
+            }
+
+            if (w > 6 || h > 6) {
+                // Dragged a selection box over a part of the PDF!
+                if (pageData && pageData.lines) {
+                    const selectedLines = pageData.lines.filter((line) => {
+                        if (line.isActivated) return false;
+                        return (
+                            line.x + line.width >= x &&
+                            line.x <= x + w &&
+                            line.y + line.height >= y &&
+                            line.y <= y + h
+                        );
+                    });
+
+                    if (selectedLines.length > 0) {
+                        selectedLines.forEach((line) => activateTextLine(pageData, line, false));
+                        if (selectedLines.length === 1) {
+                            fCanvas.setActiveObject(selectedLines[0].fabricObject);
+                            selectedLines[0].fabricObject.enterEditing();
+                        }
+                        fCanvas.renderAll();
+                    }
+                }
+            } else {
+                // Single click selection on a specific text line
+                if (pageData && pageData.lines) {
+                    const line = findTextLineAt(pageData.lines, pointer.x, pointer.y);
+                    if (line) {
+                        activateTextLine(pageData, line, true);
+                        fCanvas.renderAll();
+                    }
+                }
+            }
+
+            dragStart = null;
+            fCanvas.selection = true;
         }
     });
 
     fCanvas.on('selection:created', (e) => onObjectSelected(e.selected[0]));
     fCanvas.on('selection:updated', (e) => onObjectSelected(e.selected[0]));
     fCanvas.on('selection:cleared', () => onSelectionCleared());
+
+    // History Tracking: Freehand Pen & Highlighter Drawing
+    fCanvas.on('path:created', (e) => {
+        const pathObj = e.path;
+        if (!pathObj) return;
+        historyManager.push({
+            pageIndex,
+            description: 'Draw Stroke',
+            undo: () => {
+                fCanvas.remove(pathObj);
+                fCanvas.renderAll();
+            },
+            redo: () => {
+                fCanvas.add(pathObj);
+                fCanvas.renderAll();
+            },
+        });
+    });
+
+    // History Tracking: Object Transform (Move, Scale, Rotate)
+    fCanvas.on('before:transform', (e) => {
+        const target = e.transform ? e.transform.target : null;
+        if (target && !target._historyTransformStart) {
+            target._historyTransformStart = {
+                left: target.left,
+                top: target.top,
+                scaleX: target.scaleX,
+                scaleY: target.scaleY,
+                angle: target.angle,
+            };
+        }
+    });
+
+    fCanvas.on('object:modified', (e) => {
+        const target = e.target;
+        if (!target) return;
+        const before = target._historyTransformStart;
+        const after = {
+            left: target.left,
+            top: target.top,
+            scaleX: target.scaleX,
+            scaleY: target.scaleY,
+            angle: target.angle,
+        };
+        target._historyTransformStart = null;
+
+        if (before && (Math.abs(before.left - after.left) > 0.5 || Math.abs(before.top - after.top) > 0.5 || Math.abs(before.scaleX - after.scaleX) > 0.005 || Math.abs(before.scaleY - after.scaleY) > 0.005 || Math.abs(before.angle - after.angle) > 0.5)) {
+            historyManager.push({
+                pageIndex,
+                description: 'Transform Object',
+                undo: () => {
+                    target.set(before);
+                    target.setCoords();
+                    fCanvas.setActiveObject(target);
+                    fCanvas.renderAll();
+                },
+                redo: () => {
+                    target.set(after);
+                    target.setCoords();
+                    fCanvas.setActiveObject(target);
+                    fCanvas.renderAll();
+                },
+            });
+        }
+    });
+
+    // History Tracking: Text Content Edits inside IText
+    fCanvas.on('text:editing:entered', (e) => {
+        const textObj = e.target;
+        if (textObj) {
+            textObj._historyTextBefore = textObj.text;
+        }
+    });
+
+    fCanvas.on('text:editing:exited', (e) => {
+        const textObj = e.target;
+        if (textObj && typeof textObj._historyTextBefore === 'string') {
+            const textBefore = textObj._historyTextBefore;
+            const textAfter = textObj.text;
+            textObj._historyTextBefore = null;
+
+            if (textBefore !== textAfter) {
+                historyManager.push({
+                    pageIndex,
+                    description: 'Edit Text Content',
+                    undo: () => {
+                        textObj.set('text', textBefore);
+                        fCanvas.renderAll();
+                    },
+                    redo: () => {
+                        textObj.set('text', textAfter);
+                        fCanvas.renderAll();
+                    },
+                });
+            }
+        }
+    });
 }
 
 function onObjectSelected(obj) {
@@ -715,20 +1290,43 @@ function setActiveTool(tool) {
         textPlacementBanner?.classList.add('hidden');
     }
 
+    if (tool === 'edit-text') {
+        editTextPlacementBanner?.classList.remove('hidden');
+    } else {
+        editTextPlacementBanner?.classList.add('hidden');
+    }
+
+    if (tool === 'draw') {
+        propPenGroup?.classList.remove('hidden');
+    } else {
+        propPenGroup?.classList.add('hidden');
+    }
+
+    if (tool === 'highlighter') {
+        propHighlighterGroup?.classList.remove('hidden');
+    } else {
+        propHighlighterGroup?.classList.add('hidden');
+    }
+
     // Toggle freehand drawing mode across all page canvases
+    updateBrushSettings();
+}
+
+function updateBrushSettings() {
     state.pages.forEach((p) => {
-        const isDrawing = tool === 'draw' || tool === 'highlighter';
+        if (!p.fabricCanvas) return;
+        const isDrawing = state.activeTool === 'draw' || state.activeTool === 'highlighter';
         p.fabricCanvas.isDrawingMode = isDrawing;
         if (isDrawing) {
             if (!p.fabricCanvas.freeDrawingBrush) {
                 p.fabricCanvas.freeDrawingBrush = new window.fabric.PencilBrush(p.fabricCanvas);
             }
-            if (tool === 'draw') {
-                p.fabricCanvas.freeDrawingBrush.color = '#000000';
-                p.fabricCanvas.freeDrawingBrush.width = 2;
-            } else if (tool === 'highlighter') {
-                p.fabricCanvas.freeDrawingBrush.color = 'rgba(254, 240, 138, 0.45)'; // Semi-transparent yellow
-                p.fabricCanvas.freeDrawingBrush.width = 18;
+            if (state.activeTool === 'draw') {
+                p.fabricCanvas.freeDrawingBrush.color = state.penColor;
+                p.fabricCanvas.freeDrawingBrush.width = state.penWidth;
+            } else if (state.activeTool === 'highlighter') {
+                p.fabricCanvas.freeDrawingBrush.color = hexToRgba(state.highlighterColor, 0.45);
+                p.fabricCanvas.freeDrawingBrush.width = state.highlighterWidth;
             }
         }
     });
@@ -746,15 +1344,18 @@ function addText(x, y) {
 
     const posX = typeof x === 'number' ? x : canvas.width / 2 - 60;
     const posY = typeof y === 'number' ? y : canvas.height / 3;
+    const fontFamily = propFontFamily?.value || 'Arial';
+    const fontSize = parseInt(propFontSize?.value, 10) || 14;
+    const fill = propTextColor?.value || '#000000';
 
     const text = new window.fabric.IText('Type text here', {
         left: posX,
         top: posY,
         originX: 'left',
         originY: 'top',
-        fontFamily: 'Arial',
-        fontSize: 14,
-        fill: '#000000',
+        fontFamily,
+        fontSize,
+        fill,
     });
 
     canvas.add(text);
@@ -762,6 +1363,25 @@ function addText(x, y) {
     text.enterEditing();
     text.selectAll();
     canvas.renderAll();
+
+    const targetCanvas = canvas;
+    const pageIdx = state.activePageIndex;
+    historyManager.push({
+        pageIndex: pageIdx,
+        description: 'Add Text',
+        undo: () => {
+            targetCanvas.remove(text);
+            targetCanvas.discardActiveObject();
+            targetCanvas.renderAll();
+            onSelectionCleared();
+        },
+        redo: () => {
+            targetCanvas.add(text);
+            targetCanvas.setActiveObject(text);
+            targetCanvas.renderAll();
+        },
+    });
+
     setActiveTool('select');
 }
 
@@ -842,6 +1462,24 @@ function addShape(shapeType) {
         canvas.add(shape);
         canvas.setActiveObject(shape);
         canvas.renderAll();
+
+        const targetCanvas = canvas;
+        const pageIdx = state.activePageIndex;
+        historyManager.push({
+            pageIndex: pageIdx,
+            description: `Add Shape (${shapeType})`,
+            undo: () => {
+                targetCanvas.remove(shape);
+                targetCanvas.discardActiveObject();
+                targetCanvas.renderAll();
+                onSelectionCleared();
+            },
+            redo: () => {
+                targetCanvas.add(shape);
+                targetCanvas.setActiveObject(shape);
+                targetCanvas.renderAll();
+            },
+        });
     }
     shapesMenu.classList.add('hidden');
     setActiveTool('select');
@@ -895,6 +1533,25 @@ function insertTable(rows = 3, cols = 3) {
     canvas.add(tableGroup);
     canvas.setActiveObject(tableGroup);
     canvas.renderAll();
+
+    const targetCanvas = canvas;
+    const pageIdx = state.activePageIndex;
+    historyManager.push({
+        pageIndex: pageIdx,
+        description: 'Insert Table',
+        undo: () => {
+            targetCanvas.remove(tableGroup);
+            targetCanvas.discardActiveObject();
+            targetCanvas.renderAll();
+            onSelectionCleared();
+        },
+        redo: () => {
+            targetCanvas.add(tableGroup);
+            targetCanvas.setActiveObject(tableGroup);
+            targetCanvas.renderAll();
+        },
+    });
+
     setActiveTool('select');
 }
 
@@ -925,6 +1582,25 @@ function handleImageUpload(file) {
             canvas.add(fabricImg);
             canvas.setActiveObject(fabricImg);
             canvas.renderAll();
+
+            const targetCanvas = canvas;
+            const pageIdx = state.activePageIndex;
+            historyManager.push({
+                pageIndex: pageIdx,
+                description: 'Insert Image',
+                undo: () => {
+                    targetCanvas.remove(fabricImg);
+                    targetCanvas.discardActiveObject();
+                    targetCanvas.renderAll();
+                    onSelectionCleared();
+                },
+                redo: () => {
+                    targetCanvas.add(fabricImg);
+                    targetCanvas.setActiveObject(fabricImg);
+                    targetCanvas.renderAll();
+                },
+            });
+
             setActiveTool('select');
         };
         imgEl.src = e.target.result;
@@ -1021,6 +1697,24 @@ async function confirmAndPlaceSignature() {
     canvas.setActiveObject(fabricImg);
     canvas.renderAll();
 
+    const targetCanvas = canvas;
+    const targetPageIdx = pageIndex;
+    historyManager.push({
+        pageIndex: targetPageIdx,
+        description: 'Insert Signature',
+        undo: () => {
+            targetCanvas.remove(fabricImg);
+            targetCanvas.discardActiveObject();
+            targetCanvas.renderAll();
+            onSelectionCleared();
+        },
+        redo: () => {
+            targetCanvas.add(fabricImg);
+            targetCanvas.setActiveObject(fabricImg);
+            targetCanvas.renderAll();
+        },
+    });
+
     state.signPlacement = null;
     closeSignatureModal();
     clearSigDrawCanvas();
@@ -1094,6 +1788,10 @@ async function exportPdfDocument() {
             } else {
                 pdfPage = targetPdfDoc.getPage(i);
             }
+
+            // Deselect any active object so selection handles / borders are not baked into export
+            pageData.fabricCanvas.discardActiveObject();
+            pageData.fabricCanvas.renderAll();
 
             // High-resolution overlay render (2x multiplier)
             const overlayPngUrl = pageData.fabricCanvas.toDataURL({
@@ -1170,9 +1868,7 @@ function initApp() {
     toolButtons.forEach((btn) => {
         btn.addEventListener('click', () => {
             const tool = btn.dataset.tool;
-            if (tool === 'edit-text') {
-                makePageTextEditable(state.activePageIndex);
-            } else if (tool === 'table') {
+            if (tool === 'table') {
                 tableModal.classList.remove('hidden');
             } else {
                 setActiveTool(tool);
@@ -1203,6 +1899,71 @@ function initApp() {
     btnOpenSignPadNow?.addEventListener('click', () => openSignatureModal());
     btnCancelTextTool?.addEventListener('click', () => setActiveTool('select'));
     btnAddTextCenter?.addEventListener('click', () => addText());
+    btnCancelEditTextTool?.addEventListener('click', () => setActiveTool('select'));
+
+    // Freehand Pen Color & Width listeners
+    document.querySelectorAll('[data-pen-color]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const color = btn.dataset.penColor;
+            state.penColor = color;
+            if (propPenColor) propPenColor.value = color;
+            updateBrushSettings();
+            if (state.selectedObject && state.selectedObject.type === 'path') {
+                state.selectedObject.set('stroke', color);
+                getActiveCanvas()?.renderAll();
+            }
+        });
+    });
+
+    propPenColor?.addEventListener('input', (e) => {
+        state.penColor = e.target.value;
+        updateBrushSettings();
+        if (state.selectedObject && state.selectedObject.type === 'path') {
+            state.selectedObject.set('stroke', e.target.value);
+            getActiveCanvas()?.renderAll();
+        }
+    });
+
+    propPenWidth?.addEventListener('change', (e) => {
+        state.penWidth = parseInt(e.target.value, 10) || 2;
+        updateBrushSettings();
+        if (state.selectedObject && state.selectedObject.type === 'path') {
+            state.selectedObject.set('strokeWidth', state.penWidth);
+            getActiveCanvas()?.renderAll();
+        }
+    });
+
+    // Highlighter Color & Width listeners
+    document.querySelectorAll('[data-hl-color]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const color = btn.dataset.hlColor;
+            state.highlighterColor = color;
+            if (propHighlighterColor) propHighlighterColor.value = color;
+            updateBrushSettings();
+            if (state.selectedObject && state.selectedObject.type === 'path') {
+                state.selectedObject.set('stroke', hexToRgba(color, 0.45));
+                getActiveCanvas()?.renderAll();
+            }
+        });
+    });
+
+    propHighlighterColor?.addEventListener('input', (e) => {
+        state.highlighterColor = e.target.value;
+        updateBrushSettings();
+        if (state.selectedObject && state.selectedObject.type === 'path') {
+            state.selectedObject.set('stroke', hexToRgba(e.target.value, 0.45));
+            getActiveCanvas()?.renderAll();
+        }
+    });
+
+    propHighlighterWidth?.addEventListener('change', (e) => {
+        state.highlighterWidth = parseInt(e.target.value, 10) || 18;
+        updateBrushSettings();
+        if (state.selectedObject && state.selectedObject.type === 'path') {
+            state.selectedObject.set('strokeWidth', state.highlighterWidth);
+            getActiveCanvas()?.renderAll();
+        }
+    });
 
     // Context Property Bar Bindings
     propFontFamily.addEventListener('change', (e) => {
@@ -1288,20 +2049,41 @@ function initApp() {
         }
     });
 
-    propDelete.addEventListener('click', () => {
-        if (state.selectedObject) {
-            getActiveCanvas().remove(state.selectedObject);
-            onSelectionCleared();
-            getActiveCanvas().renderAll();
-        }
-    });
+    propDelete.addEventListener('click', deleteSelectedObject);
 
-    // Delete key shortcut
+    // History Undo / Redo Click listeners
+    btnUndo?.addEventListener('click', () => historyManager.undo());
+    btnRedo?.addEventListener('click', () => historyManager.redo());
+
+    // Global Keyboard Shortcuts (Delete, Backspace, Undo Cmd/Ctrl+Z, Redo Cmd+Shift+Z / Ctrl+Y)
     window.addEventListener('keydown', (e) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedObject && !state.selectedObject.isEditing) {
-            getActiveCanvas().remove(state.selectedObject);
-            onSelectionCleared();
-            getActiveCanvas().renderAll();
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        const isEditingInput = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        const isMod = isMac ? e.metaKey : e.ctrlKey;
+
+        // Undo: Cmd+Z (Mac) or Ctrl+Z (Win/Linux)
+        if (isMod && (e.key === 'z' || e.key === 'Z') && !isEditingInput) {
+            e.preventDefault();
+            if (e.shiftKey) {
+                historyManager.redo();
+            } else {
+                historyManager.undo();
+            }
+            return;
+        }
+
+        // Redo: Cmd+Shift+Z or Ctrl+Y
+        if (((isMod && e.shiftKey && (e.key === 'z' || e.key === 'Z')) || (isMod && (e.key === 'y' || e.key === 'Y'))) && !isEditingInput) {
+            e.preventDefault();
+            historyManager.redo();
+            return;
+        }
+
+        // Delete key shortcut
+        if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedObject && !state.selectedObject.isEditing && !isEditingInput) {
+            deleteSelectedObject();
         }
     });
 

@@ -4,8 +4,8 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Student Resume Builder</title>
-        <link rel="stylesheet" href="/resumes/editor.css?v=4" />
-        <script type="module" src="/resumes/editor.js?v=4"></script>
+        <link rel="stylesheet" href="/resumes/editor.css?v=5" />
+        <script type="module" src="/resumes/editor.js?v=5"></script>
     </head>
     <body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
         <header class="border-b border-slate-200 bg-white">
@@ -151,11 +151,12 @@
                         </details>
                     </div>
                     <div
-                        class="relative mx-auto aspect-210/297 w-full max-w-159 overflow-hidden rounded-sm border border-slate-300 bg-white shadow-sm"
+                        id="preview-viewport"
+                        class="relative mx-auto aspect-210/297 w-full max-w-159 overflow-y-auto overflow-x-hidden rounded-sm border border-slate-300 bg-slate-200/50 p-2 shadow-sm"
                     >
                         <div
                             id="placeholder"
-                            class="absolute inset-0 grid content-center justify-items-center gap-1 px-5 text-center"
+                            class="absolute inset-0 grid content-center justify-items-center gap-1 px-5 text-center bg-white"
                         >
                             <svg
                                 aria-hidden="true"
@@ -173,11 +174,11 @@
                             <p class="text-sm font-semibold text-slate-700">Your resume will appear here</p>
                             <p class="text-xs text-slate-600">The preview updates as you edit.</p>
                         </div>
+                        <div id="preview-pages" class="flex flex-col gap-3 w-full" hidden></div>
                         <iframe
                             id="preview"
-                            class="absolute inset-0 size-full border-0"
+                            class="hidden"
                             title="A4 resume PDF preview"
-                            hidden
                         ></iframe>
                     </div>
                 </div>
