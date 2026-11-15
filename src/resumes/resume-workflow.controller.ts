@@ -34,19 +34,6 @@ const workflowSchema = z
                 message: 'Add at least one project and make sure its section is visible.',
             });
         }
-
-        let count = 0;
-        for (const [index, section] of resume.sections.entries()) {
-            if (section.type !== 'projects' && section.type !== 'experience') continue;
-            count += section.items.length;
-            if (count <= 6) continue;
-            context.addIssue({
-                code: 'custom',
-                path: ['resume', 'sections', index, 'items'],
-                message: 'Keep at most 6 entries across Projects and Experience, including hidden sections.',
-            });
-            break;
-        }
     });
 type Workflow = z.infer<typeof workflowSchema>;
 

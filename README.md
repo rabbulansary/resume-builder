@@ -115,25 +115,12 @@ Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
 
 ## Resume PDF API
 
-On Linux, the renderer uses packaged Google Chrome when installed at
-`/opt/google/chrome/chrome`. Otherwise, install Playwright's Chromium before
-running the service or the end-to-end tests. On supported Linux distributions,
-the combined command also installs the required system libraries and fonts.
-[Playwright browser setup](https://playwright.dev/docs/browsers#install-system-dependencies)
+The PDF generator uses a pure Node.js in-memory PDF engine (PDFKit) with zero browser or headless Chromium dependencies. It renders deterministic, tagged, ATS-friendly A4 PDFs with instant cold starts and minimal memory consumption (~15–25 MB).
 
 ```bash
 pnpm install
-pnpm exec playwright install --with-deps chromium
 pnpm start
 ```
-
-Set `RESUME_CHROMIUM_EXECUTABLE_PATH` to an absolute executable path to override
-browser selection. For a Linux deployment image, install the
-matching browser and OS dependencies during the image build. If using a shared
-browser directory, set `PLAYWRIGHT_BROWSERS_PATH` to the same directory at build
-time and runtime. Run the service as a non-root user with a container seccomp
-profile that permits Chromium's user namespaces. The renderer starts Chromium
-with sandboxing enabled. [Playwright Docker setup](https://playwright.dev/docs/docker#run-the-image)
 
 ### `POST /resumes/render`
 
@@ -285,3 +272,25 @@ version, and archived presets remain readable by explicit version so saved
 JSON exports can still be opened. Preset management is intended for a local
 or access-controlled deployment. Resume contents and generation history
 are kept out of server storage.
+
+---
+
+## Standalone PDF Editor & Sign Studio
+
+Open `http://localhost:3000/pdf-editor` to access the standalone full-featured PDF Document Editor and Signature tool. This feature operates independently from the resume generator and does not affect existing resume pipelines.
+
+### Features
+- **Upload & Multi-Page View**: Upload any existing PDF or start with a blank A4 canvas. Smooth multi-page vertical scroll with page headers, delete page, and append page actions.
+- **Document Elements**:
+  - **Text**: Add headings, body text, customize font family, font size, bold, italic, underline, color, and alignment.
+  - **Shapes**: Rectangle, circle/oval, line, arrow, and whiteout/erase shape to redact or update existing text on the PDF.
+  - **Pen & Highlighter**: Freehand drawing and semi-transparent highlighting.
+  - **Table / Grid**: Customizable row $\times$ column grid generator with editable cell text.
+  - **Images**: Upload and insert PNG, JPG, or SVG images with interactive scaling and rotation.
+- **Sign PDF Tool**:
+  - Select the **Sign PDF** tool in the toolbar and click directly on the PDF page where you want the signature placed.
+  - **Draw Signature**: Interactive canvas with smooth Bézier curve interpolation, color presets (Black, Executive Navy, Royal Blue), stroke thickness controls, and undo/clear.
+  - **Upload Signature Image**: Upload a photo or scan of a paper signature. The client-side pixel extraction engine strips the paper background to a clean transparent PNG outline with real-time sensitivity thresholding and optional ink recoloring.
+  - Confirmed signatures drop directly at the clicked coordinates as resizable, movable objects.
+- **High-Fidelity PDF Export**: Re-assembles vector elements, added pages, and overlays using `pdf-lib` in the browser, triggering direct download of the edited PDF.
+

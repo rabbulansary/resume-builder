@@ -11,6 +11,6 @@ export class ResumeService {
     ) {}
 
     render(resume: Resume): Promise<Buffer> {
-        return this.pdfRenderer.render(this.template.render(resume), resume.rendering.output);
+        return this.pdfRenderer.render(resume);
     }
 }

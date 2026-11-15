@@ -41,6 +41,10 @@
         @apply grid grid-cols-1 items-end gap-x-3 gap-y-2.5 sm:grid-cols-2;
     }
 
+    .col-span-full {
+        grid-column: 1 / -1 !important;
+    }
+
     .form-field {
         @apply grid min-w-0 gap-1 text-xs font-medium text-slate-700;
     }
