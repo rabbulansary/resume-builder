@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PDFDocument } from 'pdf-lib';
-import type { Page } from 'playwright';
 import { ClassicAtsTemplate } from './classic-ats.template.js';
-import { ResumePdfRenderer } from './resume-pdf.renderer.js';
+import { ResumePdfRenderer, type RenderDetails } from './resume-pdf.renderer.js';
 import type { Resume, ResumeSection } from './resume.schema.js';
 import type { LayoutOverrides } from './templates/template.schema.js';
 import type { TemplateRevision } from './templates/template.service.js';
@@ -38,12 +36,7 @@ export interface ResumeLayout {
     report: LayoutReport;
 }
 
-interface Measurement {
-    pdf: Buffer;
-    pageCount: number;
-    contentHeightMm: number;
-    horizontalOverflow: boolean;
-}
+type Measurement = RenderDetails;
 
 @Injectable()
 export class ResumeLayoutService {
@@ -52,7 +45,7 @@ export class ResumeLayoutService {
         private readonly renderer: ResumePdfRenderer,
     ) {}
 
-    fit(resume: Resume, revision: TemplateRevision, options?: LayoutOverrides): Promise<ResumeLayout> {
+    async fit(resume: Resume, revision: TemplateRevision, options?: LayoutOverrides): Promise<ResumeLayout> {
         const { config, id, version } = revision;
         const isStudent = resume.document?.contentVariant === 'student-fresher';
         const overrides = isStudent ? config.studentOverrides : undefined;
@@ -108,85 +101,61 @@ export class ResumeLayoutService {
 
         candidates.sort((a, b) => a.priority - b.priority || b.sectionIndex - a.sectionIndex);
 
-        return this.renderer.withPage(async (page) => {
-            const { left, right, top, bottom } = resume.rendering.page.marginMm;
-            await page.setViewportSize({
-                width: Math.ceil(((210 - left - right) * 96) / 25.4),
-                height: Math.ceil(((297 - top - bottom) * 96) / 25.4),
-            });
-            await page.emulateMedia({ media: 'print' });
-
-            const measure = (count: number) =>
-                this.measure(page, this.applyRemovals(resume, [...limits, ...candidates.slice(0, count)]));
-            const fits = (measurement: Measurement) =>
-                measurement.pageCount <= maxPages && !measurement.horizontalOverflow;
-            const initial = await measure(0);
-            let final = initial;
-            let count = 0;
-            if (!fits(initial) && candidates.length > 0) {
-                let lower = 0;
-                let upper = candidates.length;
-                final = await measure(upper);
-                if (fits(final)) {
-                    while (upper - lower > 1) {
-                        const middle = Math.floor((lower + upper) / 2);
-                        const measurement = await measure(middle);
-                        if (fits(measurement)) {
-                            upper = middle;
-                            final = measurement;
-                        } else {
-                            lower = middle;
-                        }
+        const measure = (count: number) =>
+            this.measure(this.applyRemovals(resume, [...limits, ...candidates.slice(0, count)]));
+        const fits = (measurement: Measurement) => measurement.pageCount <= maxPages && !measurement.horizontalOverflow;
+        const initial = await measure(0);
+        let final = initial;
+        let count = 0;
+        if (!fits(initial) && candidates.length > 0) {
+            let lower = 0;
+            let upper = candidates.length;
+            final = await measure(upper);
+            if (fits(final)) {
+                while (upper - lower > 1) {
+                    const middle = Math.floor((lower + upper) / 2);
+                    const measurement = await measure(middle);
+                    if (fits(measurement)) {
+                        upper = middle;
+                        final = measurement;
+                    } else {
+                        lower = middle;
                     }
                 }
-                count = upper;
             }
+            count = upper;
+        }
 
-            if (final.pageCount > maxPages)
-                warnings.push(`The remaining content uses ${final.pageCount} pages. The template allows ${maxPages}.`);
-            if (final.horizontalOverflow) warnings.push('The remaining content extends beyond the printable width.');
-            return {
-                pdf: final.pdf,
-                report: {
-                    template: { id, version },
-                    isStudent,
-                    fits: fits(final),
-                    maxPages,
-                    initialPageCount: initial.pageCount,
-                    pageCount: final.pageCount,
-                    contentHeightMm: final.contentHeightMm,
-                    horizontalOverflow: final.horizontalOverflow,
-                    exclusions: [...limits, ...candidates.slice(0, count)].map(
-                        ({ sectionIndex, itemIndex, label, reason }) => ({
-                            sectionId: resume.sections[sectionIndex].id,
-                            sectionTitle: resume.sections[sectionIndex].title,
-                            itemIndex,
-                            label,
-                            reason,
-                        }),
-                    ),
-                    warnings,
-                },
-            };
-        });
+        if (final.pageCount > maxPages)
+            warnings.push(`The remaining content uses ${final.pageCount} pages. The template allows ${maxPages}.`);
+        if (final.horizontalOverflow) warnings.push('The remaining content extends beyond the printable width.');
+        return {
+            pdf: final.pdf,
+            report: {
+                template: { id, version },
+                isStudent,
+                fits: fits(final),
+                maxPages,
+                initialPageCount: initial.pageCount,
+                pageCount: final.pageCount,
+                contentHeightMm: final.contentHeightMm,
+                horizontalOverflow: final.horizontalOverflow,
+                exclusions: [...limits, ...candidates.slice(0, count)].map(
+                    ({ sectionIndex, itemIndex, label, reason }) => ({
+                        sectionId: resume.sections[sectionIndex].id,
+                        sectionTitle: resume.sections[sectionIndex].title,
+                        itemIndex,
+                        label,
+                        reason,
+                    }),
+                ),
+                warnings,
+            },
+        };
     }
 
-    private async measure(page: Page, resume: Resume): Promise<Measurement> {
-        await page.setContent(this.template.render(resume), { waitUntil: 'load', timeout: 10_000 });
-        const bounds = await page.evaluate(async () => {
-            await document.fonts.ready;
-            return {
-                height: document.body.getBoundingClientRect().height,
-                horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
-            };
-        });
-        const pdf = await this.renderer.print(page, resume.rendering.output);
-        return {
-            pdf,
-            pageCount: (await PDFDocument.load(pdf, { updateMetadata: false })).getPageCount(),
-            contentHeightMm: Math.round(((bounds.height * 25.4) / 96) * 10) / 10,
-            horizontalOverflow: bounds.horizontalOverflow,
-        };
+    private measure(resume: Resume): Promise<Measurement> {
+        return this.renderer.renderWithDetails(resume);
     }
 
     private applyRemovals(resume: Resume, removals: Removal[]): Resume {

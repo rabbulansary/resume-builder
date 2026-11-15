@@ -6,15 +6,6 @@ const status = document.querySelector('#status');
 const warning = document.querySelector('#validation-warning');
 const pdfButton = document.querySelector('#download-pdf');
 const printButton = document.querySelector('#print');
-const maxProjectExperienceEntries = 6;
-
-function countProjectExperienceEntries() {
-    return resume.sections.reduce(
-        (count, section) =>
-            section.type === 'projects' || section.type === 'experience' ? count + section.items.length : count,
-        0,
-    );
-}
 
 const sectionLabels = {
     summary: 'Professional summary',
@@ -29,20 +20,20 @@ const sectionLabels = {
 const itemFields = {
     skill_groups: [
         ['label', 'Group label'],
-        ['values', 'Skills, one per line', 'lines'],
+        ['values', 'Skills', 'skills'],
     ],
     experience: [
         ['role', 'Role'],
         ['organization', 'Organization'],
         ['location', 'Location'],
         ['dateDisplay', 'Dates as shown on resume'],
-        ['bullets', 'Highlights, one per line', 'lines'],
+        ['bullets', 'Highlights', 'bullets'],
     ],
     projects: [
         ['name', 'Project name'],
         ['dateDisplay', 'Dates as shown on resume'],
-        ['technologies', 'Tools, one per line', 'lines'],
-        ['bullets', 'Highlights, one per line', 'lines'],
+        ['technologies', 'Technologies / Tools', 'skills'],
+        ['bullets', 'Highlights', 'bullets'],
     ],
     education: [
         ['qualification', 'Qualification'],
@@ -120,7 +111,449 @@ function field(label, value, change, type = 'text') {
     return wrapper;
 }
 
+function bulletsEditor(object, key, label = 'Highlights') {
+    if (!Array.isArray(object[key])) {
+        object[key] = object[key] ? [String(object[key])] : [];
+    }
+    const container = node('div', undefined, 'col-span-full w-full self-start space-y-2 mt-1');
+
+    const header = node(
+        'div',
+        undefined,
+        'flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-1.5',
+    );
+    const titleGroup = node('div', undefined, 'flex items-center gap-2');
+    const titleLabel = node('span', label, 'text-xs font-semibold text-slate-800');
+    const badge = node('span', '', 'rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700');
+    titleGroup.append(titleLabel, badge);
+
+    let rawMode = false;
+
+    const toggleBtn = button(
+        'Switch to plain text',
+        () => {
+            rawMode = !rawMode;
+            toggleBtn.textContent = rawMode ? 'Switch to bullet cards' : 'Switch to plain text';
+            renderBody();
+        },
+        'ui-button ui-button-quiet text-xs text-indigo-700 hover:bg-indigo-50',
+    );
+
+    header.append(titleGroup, toggleBtn);
+    container.append(header);
+
+    const bodyContainer = node('div', undefined, 'space-y-2');
+    container.append(bodyContainer);
+
+    function updateBadge() {
+        const count = object[key]?.length ?? 0;
+        badge.textContent = `${count} ${count === 1 ? 'bullet point' : 'bullet points'}`;
+    }
+
+    function sync() {
+        updateBadge();
+        queuePreview();
+    }
+
+    function renderBody() {
+        bodyContainer.replaceChildren();
+        updateBadge();
+
+        if (rawMode) {
+            const rawWrap = node('div', undefined, 'space-y-1.5');
+            const hint = node(
+                'p',
+                'One bullet point per line. Enter creates a new bullet point on the resume.',
+                'text-[11px] text-slate-500',
+            );
+            const rawTextarea = node('textarea');
+            rawTextarea.className =
+                'w-full min-h-28 rounded-md border border-slate-300 bg-white p-2.5 text-sm text-slate-900 leading-relaxed focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
+            rawTextarea.value = (object[key] ?? []).join('\n');
+            rawTextarea.placeholder = 'Type or paste highlights here, one per line...';
+            rawTextarea.addEventListener('input', () => {
+                object[key] = rawTextarea.value
+                    .split('\n')
+                    .map((l) => l.trim())
+                    .filter(Boolean);
+                sync();
+            });
+            rawWrap.append(hint, rawTextarea);
+            bodyContainer.append(rawWrap);
+            if (!fieldControls.has(object)) fieldControls.set(object, new Map());
+            fieldControls.get(object).set(key, { label, input: rawTextarea });
+            return;
+        }
+
+        const list = node('div', undefined, 'space-y-2');
+        const bullets = object[key] ?? [];
+
+        if (bullets.length === 0) {
+            const emptyPrompt = node(
+                'p',
+                'No highlights added yet. Click "+ Add bullet point" below to add your first highlight.',
+                'text-xs text-slate-500 py-1.5 italic',
+            );
+            list.append(emptyPrompt);
+        }
+
+        bullets.forEach((bulletText, bIndex) => {
+            const card = node(
+                'div',
+                undefined,
+                'group relative flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-2.5 shadow-xs transition-all focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-300 hover:border-slate-300',
+            );
+
+            const marker = node(
+                'div',
+                undefined,
+                'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-700 font-bold text-xs select-none',
+            );
+            marker.textContent = '•';
+
+            const textarea = node('textarea');
+            textarea.className =
+                'w-full min-h-[44px] resize-none border-0 bg-transparent p-0 text-xs sm:text-sm text-slate-900 leading-snug focus:ring-0 focus:outline-none placeholder:text-slate-400';
+            textarea.placeholder = `Highlight #${bIndex + 1}...`;
+            textarea.value = bulletText;
+            textarea.rows = 2;
+
+            const autoResize = () => {
+                textarea.style.height = 'auto';
+                textarea.style.height = `${Math.max(44, textarea.scrollHeight)}px`;
+            };
+            setTimeout(autoResize, 0);
+
+            textarea.addEventListener('input', () => {
+                autoResize();
+                object[key][bIndex] = textarea.value;
+                sync();
+            });
+
+            textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    const start = textarea.selectionStart;
+                    const end = textarea.selectionEnd;
+                    const val = textarea.value;
+                    const before = val.substring(0, start).trim();
+                    const after = val.substring(end).trim();
+
+                    object[key][bIndex] = before;
+                    object[key].splice(bIndex + 1, 0, after);
+                    sync();
+                    renderBody();
+                    setTimeout(() => {
+                        const allTextareas = bodyContainer.querySelectorAll('textarea');
+                        const nextTa = allTextareas[bIndex + 1];
+                        if (nextTa) {
+                            nextTa.focus();
+                            nextTa.setSelectionRange(0, 0);
+                        }
+                    }, 0);
+                } else if (e.key === 'Backspace' && textarea.value === '' && object[key].length > 1) {
+                    e.preventDefault();
+                    object[key].splice(bIndex, 1);
+                    sync();
+                    renderBody();
+                    setTimeout(() => {
+                        const allTextareas = bodyContainer.querySelectorAll('textarea');
+                        const prevTa = allTextareas[Math.max(0, bIndex - 1)];
+                        if (prevTa) {
+                            prevTa.focus();
+                            prevTa.setSelectionRange(prevTa.value.length, prevTa.value.length);
+                        }
+                    }, 0);
+                }
+            });
+
+            textarea.addEventListener('paste', (e) => {
+                const pasted = (e.clipboardData || window.clipboardData)?.getData('text');
+                if (pasted && pasted.includes('\n')) {
+                    e.preventDefault();
+                    const lines = pasted
+                        .split('\n')
+                        .map((l) => l.trim().replace(/^[•\-*]\s*/, ''))
+                        .filter(Boolean);
+                    if (lines.length > 0) {
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        const before = textarea.value.substring(0, start);
+                        const after = textarea.value.substring(end);
+                        lines[0] = (before + lines[0]).trim();
+                        lines[lines.length - 1] = (lines[lines.length - 1] + after).trim();
+                        object[key].splice(bIndex, 1, ...lines);
+                        sync();
+                        renderBody();
+                    }
+                }
+            });
+
+            const delBtn = button(
+                '✕',
+                () => {
+                    object[key].splice(bIndex, 1);
+                    sync();
+                    renderBody();
+                },
+                'ui-button ui-button-quiet size-6 shrink-0 p-0 text-slate-400 hover:text-rose-600 rounded',
+            );
+            delBtn.title = 'Delete highlight';
+
+            card.append(marker, textarea, delBtn);
+            list.append(card);
+        });
+
+        const actionRow = node('div', undefined, 'flex flex-wrap items-center justify-between gap-2 pt-1');
+        const addBtn = button(
+            '+ Add bullet point',
+            () => {
+                object[key].push('');
+                sync();
+                renderBody();
+                setTimeout(() => {
+                    const allTextareas = bodyContainer.querySelectorAll('textarea');
+                    const lastTa = allTextareas[allTextareas.length - 1];
+                    if (lastTa) lastTa.focus();
+                }, 0);
+            },
+            'ui-button ui-button-quiet text-indigo-700 hover:bg-indigo-50 border border-dashed border-indigo-200',
+        );
+
+        const hint = node(
+            'span',
+            'Press Enter to add next bullet • Shift+Enter for soft line break',
+            'text-[11px] text-slate-500',
+        );
+
+        actionRow.append(addBtn, hint);
+        bodyContainer.append(list, actionRow);
+
+        if (!fieldControls.has(object)) fieldControls.set(object, new Map());
+        const firstTa = bodyContainer.querySelector('textarea');
+        fieldControls.get(object).set(key, { label, input: firstTa });
+    }
+
+    renderBody();
+    return container;
+}
+
+function skillsEditor(object, key, label = 'Skills') {
+    if (!Array.isArray(object[key])) {
+        object[key] = object[key] ? [String(object[key])] : [];
+    }
+    const container = node('div', undefined, 'col-span-full w-full self-start space-y-2 mt-1');
+
+    const header = node(
+        'div',
+        undefined,
+        'flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-1.5',
+    );
+    const titleGroup = node('div', undefined, 'flex items-center gap-2');
+    const titleLabel = node('span', label, 'text-xs font-semibold text-slate-800');
+    const badge = node('span', '', 'rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700');
+    titleGroup.append(titleLabel, badge);
+
+    let rawMode = false;
+
+    const toggleBtn = button(
+        'Switch to plain text',
+        () => {
+            rawMode = !rawMode;
+            toggleBtn.textContent = rawMode ? 'Switch to skill chips' : 'Switch to plain text';
+            renderBody();
+        },
+        'ui-button ui-button-quiet text-xs text-indigo-700 hover:bg-indigo-50',
+    );
+
+    header.append(titleGroup, toggleBtn);
+    container.append(header);
+
+    const bodyContainer = node('div', undefined, 'space-y-2');
+    container.append(bodyContainer);
+
+    function updateBadge() {
+        const count = object[key]?.filter(Boolean).length ?? 0;
+        badge.textContent = `${count} ${count === 1 ? 'skill' : 'skills'}`;
+    }
+
+    function sync() {
+        updateBadge();
+        queuePreview();
+    }
+
+    function renderBody() {
+        bodyContainer.replaceChildren();
+        updateBadge();
+
+        if (rawMode) {
+            const rawWrap = node('div', undefined, 'space-y-1.5');
+            const hint = node(
+                'p',
+                'One skill per line, or comma-separated. Enter creates a new skill line.',
+                'text-[11px] text-slate-500',
+            );
+            const rawTextarea = node('textarea');
+            rawTextarea.className =
+                'w-full min-h-24 rounded-md border border-slate-300 bg-white p-2.5 text-sm text-slate-900 leading-relaxed focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
+            rawTextarea.value = (object[key] ?? []).join('\n');
+            rawTextarea.placeholder = 'Type or paste skills here, one per line...';
+            rawTextarea.addEventListener('input', () => {
+                object[key] = rawTextarea.value
+                    .split(/[\n,]/)
+                    .map((l) => l.trim())
+                    .filter(Boolean);
+                sync();
+            });
+            rawWrap.append(hint, rawTextarea);
+            bodyContainer.append(rawWrap);
+            if (!fieldControls.has(object)) fieldControls.set(object, new Map());
+            fieldControls.get(object).set(key, { label, input: rawTextarea });
+            return;
+        }
+
+        const wrapBox = node(
+            'div',
+            undefined,
+            'flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5 min-h-[52px]',
+        );
+        const skills = object[key] ?? [];
+
+        skills.forEach((skillText, sIndex) => {
+            const chip = node(
+                'div',
+                undefined,
+                'group flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 shadow-2xs transition-all focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 hover:border-slate-400',
+            );
+
+            const input = node('input');
+            input.type = 'text';
+            input.className =
+                'border-0 bg-transparent p-0 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-0 placeholder:text-slate-400';
+            input.placeholder = 'Skill name...';
+            input.value = skillText;
+
+            const adjustWidth = () => {
+                input.style.width = `${Math.max(65, Math.min(320, (input.value.length + 2) * 8.5))}px`;
+            };
+            adjustWidth();
+
+            input.addEventListener('input', () => {
+                adjustWidth();
+                object[key][sIndex] = input.value;
+                sync();
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    object[key].splice(sIndex + 1, 0, '');
+                    sync();
+                    renderBody();
+                    setTimeout(() => {
+                        const allInputs = wrapBox.querySelectorAll('input');
+                        const nextInp = allInputs[sIndex + 1];
+                        if (nextInp) nextInp.focus();
+                    }, 0);
+                } else if (e.key === 'Backspace' && input.value === '' && object[key].length > 1) {
+                    e.preventDefault();
+                    object[key].splice(sIndex, 1);
+                    sync();
+                    renderBody();
+                    setTimeout(() => {
+                        const allInputs = wrapBox.querySelectorAll('input');
+                        const prevInp = allInputs[Math.max(0, sIndex - 1)];
+                        if (prevInp) {
+                            prevInp.focus();
+                            prevInp.setSelectionRange(prevInp.value.length, prevInp.value.length);
+                        }
+                    }, 0);
+                }
+            });
+
+            input.addEventListener('paste', (e) => {
+                const pasted = (e.clipboardData || window.clipboardData)?.getData('text');
+                if (pasted && (pasted.includes(',') || pasted.includes('\n'))) {
+                    e.preventDefault();
+                    const newSkills = pasted
+                        .split(/[\n,]/)
+                        .map((s) => s.trim().replace(/^[•\-*]\s*/, ''))
+                        .filter(Boolean);
+                    if (newSkills.length > 0) {
+                        object[key].splice(sIndex, 1, ...newSkills);
+                        sync();
+                        renderBody();
+                    }
+                }
+            });
+
+            const crossBtn = node(
+                'button',
+                '✕',
+                'flex size-4.5 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors text-xs font-semibold cursor-pointer',
+            );
+            crossBtn.type = 'button';
+            crossBtn.title = 'Remove skill';
+            crossBtn.addEventListener('click', () => {
+                object[key].splice(sIndex, 1);
+                sync();
+                renderBody();
+            });
+
+            chip.append(input, crossBtn);
+            wrapBox.append(chip);
+        });
+
+        const circlePlusBtn = node(
+            'button',
+            undefined,
+            'flex size-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xs hover:bg-indigo-700 active:scale-95 transition-all cursor-pointer',
+        );
+        circlePlusBtn.type = 'button';
+        circlePlusBtn.title = 'Add skill (or press Enter in any skill)';
+        circlePlusBtn.innerHTML = `
+            <svg class="size-4 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+        `;
+        circlePlusBtn.addEventListener('click', () => {
+            object[key].push('');
+            sync();
+            renderBody();
+            setTimeout(() => {
+                const allInputs = wrapBox.querySelectorAll('input');
+                const lastInp = allInputs[allInputs.length - 1];
+                if (lastInp) lastInp.focus();
+            }, 0);
+        });
+
+        wrapBox.append(circlePlusBtn);
+
+        const hintRow = node('div', undefined, 'flex items-center justify-between text-[11px] text-slate-500 pt-0.5');
+        hintRow.append(node('span', 'Press Enter in a skill field or click ⊕ to add more • Click ✕ to remove'));
+
+        bodyContainer.append(wrapBox, hintRow);
+
+        if (!fieldControls.has(object)) fieldControls.set(object, new Map());
+        const firstInp = wrapBox.querySelector('input');
+        fieldControls.get(object).set(key, { label, input: firstInp ?? circlePlusBtn });
+    }
+
+    renderBody();
+    return container;
+}
+
 function property(object, key, label, type, fallback) {
+    if (type === 'bullets') {
+        const wrapper = bulletsEditor(object, key, label);
+        wrapper.classList.add('col-span-full');
+        return wrapper;
+    }
+    if (type === 'skills') {
+        const wrapper = skillsEditor(object, key, label);
+        wrapper.classList.add('col-span-full');
+        return wrapper;
+    }
     const wrapper = field(
         label,
         object[key] ?? fallback,
@@ -130,6 +563,9 @@ function property(object, key, label, type, fallback) {
         },
         type,
     );
+    if (type === 'lines' || type === 'textarea') {
+        wrapper.classList.add('col-span-full');
+    }
     if (!fieldControls.has(object)) fieldControls.set(object, new Map());
     fieldControls.get(object).set(key, { label, input: wrapper.lastElementChild });
     return wrapper;
@@ -312,17 +748,8 @@ function layoutEditor() {
 
 function sectionEditor(section, sectionIndex) {
     const box = group(sectionLabels[section.type]);
-    const isProjectOrExperience = section.type === 'projects' || section.type === 'experience';
-    const combinedCount = isProjectOrExperience ? countProjectExperienceEntries() : 0;
-    if (isProjectOrExperience) {
-        const requirement = section.type === 'projects' ? ' At least one project must be visible.' : '';
-        box.append(
-            node(
-                'p',
-                `${combinedCount} / ${maxProjectExperienceEntries} entries across Projects and Experience, including hidden sections.${requirement}`,
-                'text-sm text-slate-600',
-            ),
-        );
+    if (section.type === 'projects') {
+        box.append(node('p', 'At least one project must be visible.', 'text-sm text-slate-600'));
     }
     const controls = grid(
         property(section, 'title', 'Section heading'),
@@ -397,7 +824,6 @@ function sectionEditor(section, sectionIndex) {
                 else section.items.push({ [itemFields[section.type][0][0]]: '' });
             }),
         );
-        addEntry.disabled = isProjectOrExperience && combinedCount >= maxProjectExperienceEntries;
         fieldControls.get(section).set('addEntry', { input: addEntry });
         box.append(addEntry);
     }
@@ -572,9 +998,44 @@ function payload() {
     return {
         resume: {
             ...resume,
-            sections: resume.sections.filter((section) =>
-                section.type === 'summary' ? section.content?.trim() : section.items.length > 0,
-            ),
+            sections: resume.sections
+                .filter((section) =>
+                    section.type === 'summary' ? section.content?.trim() : section.items.length > 0,
+                )
+                .map((section) => {
+                    if (section.type === 'skill_groups') {
+                        return {
+                            ...section,
+                            items: section.items.map((item) => {
+                                const cleanItem = { ...item };
+                                if (Array.isArray(cleanItem.values)) {
+                                    cleanItem.values = cleanItem.values.map((v) => v.trim()).filter(Boolean);
+                                }
+                                return cleanItem;
+                            }),
+                        };
+                    }
+                    if (section.type === 'experience' || section.type === 'projects') {
+                        return {
+                            ...section,
+                            items: section.items.map((item) => {
+                                const cleanItem = { ...item };
+                                if (Array.isArray(cleanItem.bullets)) {
+                                    const filtered = cleanItem.bullets.map((b) => b.trim()).filter(Boolean);
+                                    if (filtered.length > 0) cleanItem.bullets = filtered;
+                                    else delete cleanItem.bullets;
+                                }
+                                if (Array.isArray(cleanItem.technologies)) {
+                                    const filtered = cleanItem.technologies.map((t) => t.trim()).filter(Boolean);
+                                    if (filtered.length > 0) cleanItem.technologies = filtered;
+                                    else delete cleanItem.technologies;
+                                }
+                                return cleanItem;
+                            }),
+                        };
+                    }
+                    return section;
+                }),
         },
         template,
         layout,

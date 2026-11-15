@@ -8,16 +8,19 @@ export class ResumeEditorController {
         'Content-Security-Policy',
         "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     )
+    @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
     editor(): Promise<StreamableFile> {
         return this.asset('index.html', 'text/html; charset=utf-8');
     }
 
     @Get('editor.js')
+    @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
     script(): Promise<StreamableFile> {
         return this.asset('editor.js', 'text/javascript; charset=utf-8');
     }
 
     @Get('editor.css')
+    @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
     styles(): Promise<StreamableFile> {
         return this.asset('editor.generated.css', 'text/css; charset=utf-8');
     }
