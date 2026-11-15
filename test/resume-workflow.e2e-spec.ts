@@ -63,6 +63,14 @@ describe('resume editor workflow', () => {
             .get('/resumes/editor.css')
             .expect(200)
             .expect('Content-Type', /text\/css/);
+        await http
+            .get('/resumes/vendor/pdf.min.mjs')
+            .expect(200)
+            .expect('Content-Type', /text\/javascript/);
+        await http
+            .get('/resumes/vendor/pdf.worker.min.mjs')
+            .expect(200)
+            .expect('Content-Type', /text\/javascript/);
     });
 
     it('validates presets, serializes concurrent updates, and retains pinned versions after deletion', async () => {

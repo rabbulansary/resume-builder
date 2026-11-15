@@ -9,16 +9,19 @@ export class PdfEditorController {
         'Content-Security-Policy',
         "default-src 'none'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob: data:; frame-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     )
+    @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
     editor(): Promise<StreamableFile> {
         return this.asset('index.html', 'text/html; charset=utf-8');
     }
 
     @Get('pdf-editor.css')
+    @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
     styles(): Promise<StreamableFile> {
         return this.asset('pdf-editor.generated.css', 'text/css; charset=utf-8');
     }
 
     @Get('js/pdf-editor.js')
+    @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
     script(): Promise<StreamableFile> {
         return this.asset('js/pdf-editor.js', 'text/javascript; charset=utf-8');
     }

@@ -29,6 +29,8 @@ describe('PdfEditorController (e2e)', () => {
         expect(res.text).toContain('PDF Document Studio & Sign');
         expect(res.text).toContain('id="signature-modal"');
         expect(res.text).toContain('id="tool-sign"');
+        expect(res.text).toContain('id="btn-undo"');
+        expect(res.text).toContain('id="btn-redo"');
     });
 
     it('GET /pdf-editor/pdf-editor.css returns compiled CSS', async () => {
@@ -44,6 +46,8 @@ describe('PdfEditorController (e2e)', () => {
         expect(res.headers['content-type']).toContain('text/javascript');
         expect(res.text).toContain('extractSignatureBackground');
         expect(res.text).toContain('confirmAndPlaceSignature');
+        expect(res.text).toContain('HistoryManager');
+        expect(res.text).toContain('HistoryNode');
     });
 
     it('GET /pdf-editor/vendor/fabric.min.js serves local Fabric library', async () => {
