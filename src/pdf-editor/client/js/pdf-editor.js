@@ -28,7 +28,22 @@ const state = {
 const docMeta = document.getElementById('doc-meta');
 const emptyState = document.getElementById('empty-state');
 const pagesViewport = document.getElementById('pages-viewport');
+const workspaceContainer = document.getElementById('workspace-container');
+const toolbarRibbon = document.getElementById('toolbar-ribbon');
+const dockHistory = document.getElementById('dock-history');
+const dockTools = document.getElementById('dock-tools');
 const viewportControls = document.getElementById('viewport-controls');
+const dockPageNav = document.getElementById('dock-page-nav');
+const btnPrevPage = document.getElementById('btn-prev-page');
+const btnNextPage = document.getElementById('btn-next-page');
+const pageNavLabel = document.getElementById('page-nav-label');
+const zoomInput = document.getElementById('zoom-input');
+const edgePipeHandle = document.getElementById('edge-pipe-handle');
+const workspaceBackdrop = document.getElementById('workspace-backdrop');
+const btnSwitchResumeBuilder = document.getElementById('btn-switch-resume-builder');
+const redirectConfirmModal = document.getElementById('redirect-confirm-modal');
+const btnCancelRedirect = document.getElementById('btn-cancel-redirect');
+const btnConfirmRedirect = document.getElementById('btn-confirm-redirect');
 const zoomLabel = document.getElementById('zoom-label');
 const btnZoomIn = document.getElementById('btn-zoom-in');
 const btnZoomOut = document.getElementById('btn-zoom-out');
@@ -62,6 +77,15 @@ const propHighlighterWidth = document.getElementById('prop-highlighter-width');
 // History Undo / Redo DOM Elements
 const btnUndo = document.getElementById('btn-undo');
 const btnRedo = document.getElementById('btn-redo');
+
+// Hand Tool & Panning State
+let isPanning = false;
+let panStartX = 0;
+let panStartY = 0;
+let panScrollLeft = 0;
+let panScrollTop = 0;
+let isSpacePressed = false;
+let previousToolBeforeSpace = null;
 
 // ---------------------------------------------------------------------------
 // 0. Doubly Linked List History Engine (Undo / Redo Architecture)
@@ -134,6 +158,11 @@ class HistoryManager {
     undo() {
         if (!this.canUndo() || this.isExecuting) return false;
 
+        // Reset active drawing/text tool to select to avoid overlapping toolbars
+        if (typeof setActiveTool === 'function') {
+            setActiveTool('select');
+        }
+
         this.isExecuting = true;
         try {
             const action = this.current.action;
@@ -156,6 +185,11 @@ class HistoryManager {
 
     redo() {
         if (!this.canRedo() || this.isExecuting) return false;
+
+        // Reset active drawing/text tool to select to avoid overlapping toolbars
+        if (typeof setActiveTool === 'function') {
+            setActiveTool('select');
+        }
 
         this.isExecuting = true;
         try {
@@ -505,7 +539,14 @@ async function loadPdfBuffer(buffer, filename = 'document.pdf') {
     docMeta.textContent = `${filename} • ${state.pdfDoc.numPages} ${state.pdfDoc.numPages === 1 ? 'page' : 'pages'}`;
     emptyState.classList.add('hidden');
     pagesViewport.classList.remove('hidden');
-    viewportControls.classList.remove('hidden');
+    dockHistory?.classList.remove('hidden');
+    dockHistory?.classList.add('flex');
+    dockTools?.classList.remove('hidden');
+    dockTools?.classList.add('flex');
+    viewportControls?.classList.remove('hidden');
+    viewportControls?.classList.add('flex');
+    dockPageNav?.classList.remove('hidden');
+    dockPageNav?.classList.add('flex');
 
     for (let pageNum = 1; pageNum <= state.pdfDoc.numPages; pageNum++) {
         await createPageElement(pageNum);
@@ -524,7 +565,14 @@ function startWithBlankA4() {
     docMeta.textContent = 'Untitled Document • 1 page';
     emptyState.classList.add('hidden');
     pagesViewport.classList.remove('hidden');
-    viewportControls.classList.remove('hidden');
+    dockHistory?.classList.remove('hidden');
+    dockHistory?.classList.add('flex');
+    dockTools?.classList.remove('hidden');
+    dockTools?.classList.add('flex');
+    viewportControls?.classList.remove('hidden');
+    viewportControls?.classList.add('flex');
+    dockPageNav?.classList.remove('hidden');
+    dockPageNav?.classList.add('flex');
 
     appendBlankPage();
     applyZoom(1.0);
@@ -538,25 +586,37 @@ async function createPageElement(pageNum) {
     const width = viewport.width;
     const height = viewport.height;
 
+    const scaledWidth = Math.round(width * state.zoom);
+    const scaledHeight = Math.round(height * state.zoom);
+
     const pageContainer = document.createElement('div');
     pageContainer.className = 'relative flex flex-col items-center group';
     pageContainer.dataset.pageIndex = pageIndex;
+    pageContainer.style.width = `${scaledWidth}px`;
 
     // Header badge
     const header = document.createElement('div');
-    header.className = 'w-full flex items-center justify-between py-1 px-2 text-xs font-semibold text-slate-500';
+    header.className = 'w-full flex items-center justify-between py-1 px-1 text-xs font-semibold text-slate-500';
     header.innerHTML = `
         <span class="rounded bg-slate-200/80 px-2 py-0.5">Page ${pageNum}</span>
         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button class="btn-delete-page rounded px-2 py-0.5 text-xs text-rose-600 hover:bg-rose-50" data-page-index="${pageIndex}" title="Delete Page">Delete</button>
+            <button class="btn-delete-page rounded px-2 py-0.5 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer" data-page-index="${pageIndex}" title="Delete Page">Delete</button>
         </div>
     `;
 
+    // Scale wrapper maintains exact scaled layout box in document flow
+    const scaleWrapper = document.createElement('div');
+    scaleWrapper.className = 'page-scale-wrapper relative rounded-sm shadow-xl bg-white overflow-hidden transition-all';
+    scaleWrapper.style.width = `${scaledWidth}px`;
+    scaleWrapper.style.height = `${scaledHeight}px`;
+
     // Canvas container
     const canvasWrap = document.createElement('div');
-    canvasWrap.className = 'relative rounded-sm shadow-xl bg-white overflow-hidden transition-all';
+    canvasWrap.className = 'absolute top-0 left-0 transition-none';
     canvasWrap.style.width = `${width}px`;
     canvasWrap.style.height = `${height}px`;
+    canvasWrap.style.transform = `scale(${state.zoom})`;
+    canvasWrap.style.transformOrigin = '0 0';
 
     // Layer 1: PDF.js Background Canvas
     const bgCanvas = document.createElement('canvas');
@@ -621,8 +681,9 @@ async function createPageElement(pageNum) {
 
     canvasWrap.appendChild(bgCanvas);
     canvasWrap.appendChild(fabricCanvasEl);
+    scaleWrapper.appendChild(canvasWrap);
     pageContainer.appendChild(header);
-    pageContainer.appendChild(canvasWrap);
+    pageContainer.appendChild(scaleWrapper);
     pagesViewport.appendChild(pageContainer);
 
     // Initialize Fabric Canvas
@@ -862,23 +923,35 @@ function appendBlankPage() {
     const width = A4_WIDTH;
     const height = A4_HEIGHT;
 
+    const scaledWidth = Math.round(width * state.zoom);
+    const scaledHeight = Math.round(height * state.zoom);
+
     const pageContainer = document.createElement('div');
     pageContainer.className = 'relative flex flex-col items-center group';
     pageContainer.dataset.pageIndex = pageIndex;
+    pageContainer.style.width = `${scaledWidth}px`;
 
     const header = document.createElement('div');
-    header.className = 'w-full flex items-center justify-between py-1 px-2 text-xs font-semibold text-slate-500';
+    header.className = 'w-full flex items-center justify-between py-1 px-1 text-xs font-semibold text-slate-500';
     header.innerHTML = `
         <span class="rounded bg-slate-200/80 px-2 py-0.5">Page ${pageIndex + 1} (Blank)</span>
         <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button class="btn-delete-page rounded px-2 py-0.5 text-xs text-rose-600 hover:bg-rose-50" data-page-index="${pageIndex}" title="Delete Page">Delete</button>
+            <button class="btn-delete-page rounded px-2 py-0.5 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer" data-page-index="${pageIndex}" title="Delete Page">Delete</button>
         </div>
     `;
 
+    // Scale wrapper maintains exact scaled layout box in document flow
+    const scaleWrapper = document.createElement('div');
+    scaleWrapper.className = 'page-scale-wrapper relative rounded-sm shadow-xl bg-white overflow-hidden transition-all';
+    scaleWrapper.style.width = `${scaledWidth}px`;
+    scaleWrapper.style.height = `${scaledHeight}px`;
+
     const canvasWrap = document.createElement('div');
-    canvasWrap.className = 'relative rounded-sm shadow-xl bg-white overflow-hidden transition-all';
+    canvasWrap.className = 'absolute top-0 left-0 transition-none';
     canvasWrap.style.width = `${width}px`;
     canvasWrap.style.height = `${height}px`;
+    canvasWrap.style.transform = `scale(${state.zoom})`;
+    canvasWrap.style.transformOrigin = '0 0';
 
     const fabricCanvasEl = document.createElement('canvas');
     fabricCanvasEl.id = `fabric-canvas-${pageIndex}`;
@@ -886,8 +959,9 @@ function appendBlankPage() {
     fabricCanvasEl.height = height;
 
     canvasWrap.appendChild(fabricCanvasEl);
+    scaleWrapper.appendChild(canvasWrap);
     pageContainer.appendChild(header);
-    pageContainer.appendChild(canvasWrap);
+    pageContainer.appendChild(scaleWrapper);
     pagesViewport.appendChild(pageContainer);
 
     const fabricCanvas = new window.fabric.Canvas(fabricCanvasEl, {
@@ -928,13 +1002,16 @@ function deletePage(pageIndex) {
     // Reindex remaining pages
     state.pages.forEach((p, idx) => {
         p.index = idx;
-        const cont = p.container.parentElement;
+        const cont = p.container ? p.container.closest('[data-page-index]') : null;
         if (cont) {
             cont.dataset.pageIndex = idx;
             const badge = cont.querySelector('span');
             if (badge) badge.textContent = `Page ${idx + 1}`;
+            const delBtn = cont.querySelector('.btn-delete-page');
+            if (delBtn) delBtn.dataset.pageIndex = idx;
         }
     });
+    updatePageNavUI();
 }
 
 // ---------------------------------------------------------------------------
@@ -947,6 +1024,18 @@ function bindFabricEvents(fCanvas, pageIndex) {
     fCanvas.on('mouse:down', (opt) => {
         state.activePageIndex = pageIndex;
         const pointer = getCanvasPointer(opt, fCanvas);
+
+        // Hand / Pan Tool active or Spacebar held: begin panning
+        if (state.activeTool === 'hand' || isSpacePressed) {
+            isPanning = true;
+            panStartX = opt.e.clientX;
+            panStartY = opt.e.clientY;
+            panScrollLeft = workspaceContainer.scrollLeft;
+            panScrollTop = workspaceContainer.scrollTop;
+            if (workspaceContainer) workspaceContainer.style.cursor = 'grabbing';
+            fCanvas.defaultCursor = 'grabbing';
+            return;
+        }
 
         // If Signature tool is primed, click-to-place triggers the signature modal!
         if (state.activeTool === 'sign') {
@@ -1039,6 +1128,14 @@ function bindFabricEvents(fCanvas, pageIndex) {
     });
 
     fCanvas.on('mouse:move', (opt) => {
+        if (isPanning) {
+            const dx = opt.e.clientX - panStartX;
+            const dy = opt.e.clientY - panStartY;
+            workspaceContainer.scrollLeft = panScrollLeft - dx;
+            workspaceContainer.scrollTop = panScrollTop - dy;
+            return;
+        }
+
         const pointer = getCanvasPointer(opt, fCanvas);
         const pageData = state.pages[pageIndex];
 
@@ -1078,6 +1175,14 @@ function bindFabricEvents(fCanvas, pageIndex) {
     });
 
     fCanvas.on('mouse:up', (opt) => {
+        if (isPanning) {
+            isPanning = false;
+            const cur = (state.activeTool === 'hand' || isSpacePressed) ? 'grab' : '';
+            if (workspaceContainer) workspaceContainer.style.cursor = cur;
+            fCanvas.defaultCursor = cur || 'default';
+            return;
+        }
+
         if (state.activeTool === 'edit-text' && dragStart) {
             const pointer = getCanvasPointer(opt, fCanvas);
             const pageData = state.pages[pageIndex];
@@ -1236,6 +1341,10 @@ function onObjectSelected(obj) {
     state.selectedObject = obj;
     contextProps.classList.remove('hidden');
 
+    // Ensure tool property palettes do not overlap with object context properties
+    propPenGroup?.classList.add('hidden');
+    propHighlighterGroup?.classList.add('hidden');
+
     if (obj.type === 'i-text' || obj.type === 'text') {
         propTextGroup.classList.remove('hidden');
         propShapeGroup.classList.add('hidden');
@@ -1258,6 +1367,7 @@ function onObjectSelected(obj) {
         }
         propStrokeWidth.value = obj.strokeWidth || 1;
     }
+    updateToolbarRibbonVisibility();
 }
 
 function onSelectionCleared() {
@@ -1265,6 +1375,16 @@ function onSelectionCleared() {
     contextProps.classList.add('hidden');
     propTextGroup.classList.add('hidden');
     propShapeGroup.classList.add('hidden');
+    updateToolbarRibbonVisibility();
+}
+
+function updateToolbarRibbonVisibility() {
+    if (!toolbarRibbon) return;
+    const isVisible = (state.activeTool === 'draw') ||
+                      (state.activeTool === 'highlighter') ||
+                      Boolean(state.selectedObject);
+    toolbarRibbon.classList.toggle('hidden', !isVisible);
+    toolbarRibbon.classList.toggle('flex', isVisible);
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,8 +1428,29 @@ function setActiveTool(tool) {
         propHighlighterGroup?.classList.add('hidden');
     }
 
+    updateToolbarRibbonVisibility();
+
+    // Toggle Hand / Pan tool state across all canvases
+    enableHandTool(tool === 'hand');
+
     // Toggle freehand drawing mode across all page canvases
     updateBrushSettings();
+}
+
+function enableHandTool(enable) {
+    if (workspaceContainer) {
+        workspaceContainer.style.cursor = enable ? 'grab' : '';
+    }
+    state.pages.forEach((p) => {
+        if (!p.fabricCanvas) return;
+        p.fabricCanvas.selection = !enable;
+        p.fabricCanvas.defaultCursor = enable ? 'grab' : 'default';
+        p.fabricCanvas.hoverCursor = enable ? 'grab' : 'move';
+        if (enable) {
+            p.fabricCanvas.discardActiveObject();
+            p.fabricCanvas.requestRenderAll();
+        }
+    });
 }
 
 function updateBrushSettings() {
@@ -1724,15 +1865,55 @@ async function confirmAndPlaceSignature() {
 // 7. Zoom & Grid Guidelines
 // ---------------------------------------------------------------------------
 function applyZoom(newZoom) {
-    state.zoom = Math.min(2.0, Math.max(0.4, newZoom));
-    zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    state.zoom = Math.min(2.5, Math.max(0.3, Number(newZoom.toFixed(2))));
+    if (zoomLabel) zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+    if (zoomInput) zoomInput.value = `${Math.round(state.zoom * 100)}%`;
 
     state.pages.forEach((p) => {
+        if (!p.container) return;
+        const scaledWidth = Math.round(p.width * state.zoom);
+        const scaledHeight = Math.round(p.height * state.zoom);
+
         p.container.style.transform = `scale(${state.zoom})`;
-        p.container.style.transformOrigin = 'top center';
-        p.container.parentElement.style.height = `${p.height * state.zoom + 32}px`;
-        p.container.parentElement.style.width = `${p.width * state.zoom}px`;
+        p.container.style.transformOrigin = '0 0';
+
+        const wrapper = p.container.closest('.page-scale-wrapper');
+        if (wrapper) {
+            wrapper.style.width = `${scaledWidth}px`;
+            wrapper.style.height = `${scaledHeight}px`;
+        }
+
+        const pageCont = p.container.closest('[data-page-index]');
+        if (pageCont) {
+            pageCont.style.width = `${scaledWidth}px`;
+        }
     });
+
+    updatePageNavUI();
+}
+
+function updatePageNavUI() {
+    if (!state.pages || state.pages.length === 0) {
+        if (pageNavLabel) pageNavLabel.textContent = 'Page 0 / 0';
+        if (btnPrevPage) btnPrevPage.disabled = true;
+        if (btnNextPage) btnNextPage.disabled = true;
+        return;
+    }
+    const current = state.activePageIndex + 1;
+    const total = state.pages.length;
+    if (pageNavLabel) pageNavLabel.textContent = `Page ${current} / ${total}`;
+    if (btnPrevPage) btnPrevPage.disabled = current <= 1;
+    if (btnNextPage) btnNextPage.disabled = current >= total;
+}
+
+function scrollToPage(index) {
+    if (index < 0 || index >= state.pages.length) return;
+    state.activePageIndex = index;
+    const target = document.querySelector(`[data-page-index="${index}"]`);
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    updatePageNavUI();
 }
 
 function toggleGrid() {
@@ -1855,14 +2036,190 @@ function initApp() {
     btnExportPdf.addEventListener('click', exportPdfDocument);
 
     // Zoom
-    btnZoomIn.addEventListener('click', () => applyZoom(state.zoom + 0.15));
-    btnZoomOut.addEventListener('click', () => applyZoom(state.zoom - 0.15));
-    btnFitWidth.addEventListener('click', () => {
-        const mainW = document.querySelector('main').clientWidth - 64;
+    btnZoomIn?.addEventListener('click', () => applyZoom(state.zoom + 0.15));
+    btnZoomOut?.addEventListener('click', () => applyZoom(state.zoom - 0.15));
+    btnFitWidth?.addEventListener('click', () => {
+        const mainW = workspaceContainer ? workspaceContainer.clientWidth - 120 : 800;
         const pageW = state.pages[0] ? state.pages[0].width : A4_WIDTH;
-        applyZoom(mainW / pageW);
+        if (pageW > 0) {
+            applyZoom(mainW / pageW);
+        }
     });
-    btnToggleGrid.addEventListener('click', toggleGrid);
+    btnToggleGrid?.addEventListener('click', toggleGrid);
+
+    // Zoom Input (Triggers only when Enter key is pressed)
+    zoomInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const raw = zoomInput.value.replace(/%/g, '').trim();
+            const parsed = parseFloat(raw);
+            if (!isNaN(parsed) && parsed > 0) {
+                const targetZoom = parsed > 5 ? parsed / 100 : parsed;
+                applyZoom(targetZoom);
+            } else {
+                zoomInput.value = `${Math.round(state.zoom * 100)}%`;
+            }
+            zoomInput.blur();
+        } else if (e.key === 'Escape') {
+            zoomInput.value = `${Math.round(state.zoom * 100)}%`;
+            zoomInput.blur();
+        }
+    });
+
+    zoomInput?.addEventListener('blur', () => {
+        zoomInput.value = `${Math.round(state.zoom * 100)}%`;
+    });
+
+    // Floating Page Navigation Dock
+    btnPrevPage?.addEventListener('click', () => {
+        if (state.activePageIndex > 0) {
+            scrollToPage(state.activePageIndex - 1);
+        }
+    });
+    btnNextPage?.addEventListener('click', () => {
+        if (state.activePageIndex < state.pages.length - 1) {
+            scrollToPage(state.activePageIndex + 1);
+        }
+    });
+
+    // Track active page on viewport scroll
+    workspaceContainer?.addEventListener('scroll', () => {
+        if (state.pages.length === 0) return;
+        const viewTop = workspaceContainer.scrollTop + 120;
+        let closestIndex = 0;
+        let minDistance = Infinity;
+
+        state.pages.forEach((p, idx) => {
+            const el = document.querySelector(`[data-page-index="${idx}"]`);
+            if (el) {
+                const distance = Math.abs(el.offsetTop - viewTop);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = idx;
+                }
+            }
+        });
+
+        if (state.activePageIndex !== closestIndex) {
+            state.activePageIndex = closestIndex;
+            updatePageNavUI();
+        }
+    }, { passive: true });
+
+    // Trackpad Pinch-to-zoom & Ctrl/Cmd + Mouse Wheel Zoom
+    workspaceContainer?.addEventListener('wheel', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 0.08 : -0.08;
+            applyZoom(state.zoom + delta);
+        }
+    }, { passive: false });
+
+    // Hand Tool Panning on workspaceContainer (background & canvas margins)
+    workspaceContainer?.addEventListener('mousedown', (e) => {
+        if (state.activeTool === 'hand' || isSpacePressed) {
+            isPanning = true;
+            panStartX = e.clientX;
+            panStartY = e.clientY;
+            panScrollLeft = workspaceContainer.scrollLeft;
+            panScrollTop = workspaceContainer.scrollTop;
+            workspaceContainer.style.cursor = 'grabbing';
+            state.pages.forEach((p) => {
+                if (p.fabricCanvas) p.fabricCanvas.defaultCursor = 'grabbing';
+            });
+            e.preventDefault();
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        const dx = e.clientX - panStartX;
+        const dy = e.clientY - panStartY;
+        workspaceContainer.scrollLeft = panScrollLeft - dx;
+        workspaceContainer.scrollTop = panScrollTop - dy;
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (isPanning) {
+            isPanning = false;
+            const cur = (state.activeTool === 'hand' || isSpacePressed) ? 'grab' : '';
+            if (workspaceContainer) workspaceContainer.style.cursor = cur;
+            state.pages.forEach((p) => {
+                if (p.fabricCanvas) {
+                    p.fabricCanvas.defaultCursor = cur || 'default';
+                    p.fabricCanvas.hoverCursor = cur || 'move';
+                }
+            });
+        }
+    });
+
+    function isInputActive() {
+        const active = document.activeElement;
+        if (!active) return false;
+        const tag = active.tagName.toLowerCase();
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || Boolean(active.isContentEditable);
+    }
+
+    // Spacebar temporary hand tool
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && !isSpacePressed && !isInputActive()) {
+            e.preventDefault();
+            isSpacePressed = true;
+            previousToolBeforeSpace = state.activeTool;
+            setActiveTool('hand');
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'Space' && isSpacePressed) {
+            isSpacePressed = false;
+            if (previousToolBeforeSpace && previousToolBeforeSpace !== 'hand') {
+                setActiveTool(previousToolBeforeSpace);
+                previousToolBeforeSpace = null;
+            }
+        }
+    });
+
+    // Workspace Switcher (macOS / Ubuntu Dash Style - Hover & Click)
+    const openWorkspaceBackdrop = (e) => {
+        e?.preventDefault();
+        workspaceBackdrop?.classList.remove('hidden');
+        workspaceBackdrop?.classList.add('flex');
+    };
+    const closeWorkspaceBackdrop = () => {
+        workspaceBackdrop?.classList.add('hidden');
+        workspaceBackdrop?.classList.remove('flex');
+    };
+
+    // Open on hover (mouseenter) and click on the pipe
+    edgePipeHandle?.addEventListener('mouseenter', openWorkspaceBackdrop);
+    edgePipeHandle?.addEventListener('click', openWorkspaceBackdrop);
+
+    // Close on backdrop click (outside the launcher entities)
+    workspaceBackdrop?.addEventListener('click', (e) => {
+        if (e.target === workspaceBackdrop) {
+            closeWorkspaceBackdrop();
+        }
+    });
+
+    // Close when mouse leaves the launcher backdrop area
+    workspaceBackdrop?.addEventListener('mouseleave', () => {
+        closeWorkspaceBackdrop();
+    });
+
+    const openRedirectModal = (e) => {
+        e?.preventDefault();
+        closeWorkspaceBackdrop();
+        redirectConfirmModal?.classList.remove('hidden');
+    };
+    btnSwitchResumeBuilder?.addEventListener('click', openRedirectModal);
+    btnCancelRedirect?.addEventListener('click', () => redirectConfirmModal?.classList.add('hidden'));
+    redirectConfirmModal?.addEventListener('click', (e) => {
+        if (e.target === redirectConfirmModal) redirectConfirmModal.classList.add('hidden');
+    });
+    btnConfirmRedirect?.addEventListener('click', () => {
+        window.location.href = '/resumes/editor';
+    });
 
     // Tool switching
     toolButtons.forEach((btn) => {
@@ -2079,6 +2436,45 @@ function initApp() {
             e.preventDefault();
             historyManager.redo();
             return;
+        }
+
+        // Zoom In: Cmd/Ctrl + '+' or '='
+        if (isMod && (e.key === '=' || e.key === '+')) {
+            e.preventDefault();
+            applyZoom(state.zoom + 0.15);
+            return;
+        }
+
+        // Zoom Out: Cmd/Ctrl + '-' or '_'
+        if (isMod && (e.key === '-' || e.key === '_')) {
+            e.preventDefault();
+            applyZoom(state.zoom - 0.15);
+            return;
+        }
+
+        // Reset Zoom: Cmd/Ctrl + '0'
+        if (isMod && e.key === '0') {
+            e.preventDefault();
+            applyZoom(1.0);
+            return;
+        }
+
+        // Hand Tool shortcut: H key
+        if ((e.key === 'h' || e.key === 'H') && !isEditingInput && !isMod) {
+            setActiveTool(state.activeTool === 'hand' ? 'select' : 'hand');
+            return;
+        }
+
+        // Escape: close workspace switcher, confirmation modal, or active modals
+        if (e.key === 'Escape') {
+            if (workspaceBackdrop && !workspaceBackdrop.classList.contains('hidden')) {
+                closeWorkspaceBackdrop();
+                return;
+            }
+            if (redirectConfirmModal && !redirectConfirmModal.classList.contains('hidden')) {
+                redirectConfirmModal.classList.add('hidden');
+                return;
+            }
         }
 
         // Delete key shortcut
