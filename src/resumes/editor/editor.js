@@ -1148,7 +1148,10 @@ function queuePreview() {
     if (!resume.profile.fullName?.trim()) {
         setBadge('Waiting for details', '');
         status.textContent = 'Enter your name to start the preview.';
-        if (preview) preview.hidden = true;
+        if (preview) {
+            preview.hidden = true;
+            preview.removeAttribute('src');
+        }
         if (previewPages) {
             previewPages.replaceChildren();
             previewPages.hidden = true;
@@ -1199,8 +1202,9 @@ async function renderPdfPreviewPages(bytes, targetRevision) {
         }
     } catch (err) {
         console.warn('PDF.js canvas preview failed, falling back to iframe', err);
-        if (preview) {
+        if (preview && previewUrl) {
             preview.className = 'absolute inset-0 size-full border-0';
+            preview.src = `${previewUrl}#toolbar=0&navpanes=0&view=FitH`;
             preview.hidden = false;
         }
     }
@@ -1219,7 +1223,7 @@ async function updatePreview() {
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         previewUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
         if (preview) {
-            preview.src = `${previewUrl}#toolbar=0&navpanes=0&view=FitH`;
+            preview.hidden = true;
         }
 
         await renderPdfPreviewPages(bytes, current);
