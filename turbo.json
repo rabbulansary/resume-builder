@@ -1,0 +1,27 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["BACKEND_ORIGIN", "BACKEND_PORT", "RESUME_TEMPLATE_DIR"]
+    },
+    "build": {
+      "env": ["BACKEND_ORIGIN", "BACKEND_PORT"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "public/resumes/editor.css", "public/pdf-editor/pdf-editor.css"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["BACKEND_PORT", "RESUME_TEMPLATE_DIR"]
+    },
+    "lint": {},
+    "test": {},
+    "test:e2e": {
+      "cache": false,
+      "passThroughEnv": ["CI", "PLAYWRIGHT_CHROMIUM_EXECUTABLE", "RESUME_E2E_BACKEND_PORT", "RESUME_E2E_FRONTEND_PORT"]
+    }
+  }
+}
