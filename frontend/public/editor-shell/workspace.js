@@ -17,6 +17,10 @@ const closeWorkspaceBackdrop = () => {
     edgePipeHandle.setAttribute('aria-expanded', 'false');
 };
 
+edgePipeHandle.addEventListener('pointerenter', (event) => {
+    if (event.pointerType === 'mouse') openWorkspaceBackdrop();
+});
+edgePipeHandle.addEventListener('mouseenter', openWorkspaceBackdrop);
 edgePipeHandle.addEventListener('pointermove', (event) => {
     if (event.pointerType === 'mouse') openWorkspaceBackdrop();
 });
@@ -48,6 +52,7 @@ workspaceBackdrop.addEventListener('click', (event) => {
 workspaceBackdrop.addEventListener('pointerleave', (event) => {
     if (event.pointerType === 'mouse') closeWorkspaceBackdrop();
 });
+workspaceBackdrop.addEventListener('mouseleave', closeWorkspaceBackdrop);
 
 workspaceBackdrop.querySelector('a[aria-current="page"]').addEventListener('click', (event) => {
     event.preventDefault();

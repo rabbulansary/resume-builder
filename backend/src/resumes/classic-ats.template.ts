@@ -42,6 +42,25 @@ export class ClassicAtsTemplate {
         );
         contactParts.push(...(contact?.links ?? []).filter((link) => link.visible).map(anchor));
 
+        const orderedSections = [...sections].sort((a, b) => {
+            const orderList = resume.section_order || resume.sectionOrder;
+            if (orderList?.length) {
+                let idxA = orderList.indexOf(a.id);
+                if (idxA === -1) idxA = orderList.indexOf(a.type);
+                let idxB = orderList.indexOf(b.id);
+                if (idxB === -1) idxB = orderList.indexOf(b.type);
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+            }
+            if (a.order !== undefined && b.order !== undefined) {
+                return a.order - b.order;
+            }
+            if (a.order !== undefined) return -1;
+            if (b.order !== undefined) return 1;
+            return 0;
+        });
+
         return `<!doctype html>
 <html lang="${escapeHtml(resume.document?.language ?? 'en')}">
 <head>
@@ -56,7 +75,7 @@ export class ClassicAtsTemplate {
 ${profile.headline ? `<p class="headline">${escapeHtml(profile.headline)}</p>` : ''}
 <div class="contact">${contactParts.join(' | ')}</div>
 </header>
-<main>${sections
+<main>${orderedSections
             .filter((section) => section.visible)
             .map(
                 (section) =>

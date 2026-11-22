@@ -55,6 +55,26 @@ export class ResumeLayoutService {
         const limits: Removal[] = [];
         const candidates: (Removal & { priority: number })[] = [];
         const warnings: string[] = [];
+        if (resume.section_order || resume.sectionOrder) {
+            const orderList = resume.section_order || resume.sectionOrder || [];
+            resume.sections.sort((a, b) => {
+                let idxA = orderList.indexOf(a.id);
+                if (idxA === -1) idxA = orderList.indexOf(a.type);
+                let idxB = orderList.indexOf(b.id);
+                if (idxB === -1) idxB = orderList.indexOf(b.type);
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+                return 0;
+            });
+        } else if (resume.sections.some((s) => s.order !== undefined)) {
+            resume.sections.sort((a, b) => {
+                if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+                if (a.order !== undefined) return -1;
+                if (b.order !== undefined) return 1;
+                return 0;
+            });
+        }
         const sectionRule = (type: ResumeSection['type']) => ({
             ...config.sections[type],
             ...overrides?.sections?.[type],

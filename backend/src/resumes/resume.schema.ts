@@ -22,7 +22,12 @@ const url = z
 const link = z.strictObject({ label: text, url, type: text.optional() });
 const links = z.array(link).max(12);
 const contactLinks = z.array(link.extend({ visible: z.boolean().default(true) })).max(12);
-const section = { id: text, title: text, visible: z.boolean().default(true) };
+const section = {
+    id: text,
+    title: text,
+    visible: z.boolean().default(true),
+    order: z.number().int().optional(),
+};
 const itemSection = {
     ...section,
     protectedItemIndexes: z.array(z.number().int().min(0).max(99)).max(100).optional(),
@@ -326,6 +331,8 @@ export const resumeSchema = z
                 })
                 .nullish(),
         }),
+        section_order: z.array(text).optional(),
+        sectionOrder: z.array(text).optional(),
         sections: z.array(sectionSchema).max(32),
         rendering: rendering.prefault({}),
     })

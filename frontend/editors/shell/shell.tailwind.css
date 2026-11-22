@@ -73,26 +73,28 @@
         transform: scale(0.96);
     }
 
+    .workspace-option:not([aria-current="page"]) .workspace-option-label {
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 160ms ease, transform 180ms ease-out;
+    }
+
+    .workspace-option:not([aria-current="page"]):is(:hover, :focus-visible) .workspace-option-label {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    .workspace-option:not([aria-current="page"]):is(:hover, :focus-visible) .workspace-option-icon {
+        @apply border-indigo-200 bg-indigo-50 text-indigo-700;
+    }
+
     @media (pointer: coarse) {
         .workspace-handle {
             width: 1.5rem;
         }
-    }
-
-    @media (hover: hover) and (pointer: fine) {
-        .workspace-option:not([aria-current="page"]) .workspace-option-label {
-            opacity: 0;
-            transform: translateX(-6px);
-            transition: opacity 160ms ease, transform 180ms ease-out;
-        }
-
-        .workspace-option:not([aria-current="page"]):is(:hover, :focus-visible) .workspace-option-label {
+        .workspace-backdrop.is-open .workspace-option-label {
             opacity: 1;
             transform: translateX(0);
-        }
-
-        .workspace-option:not([aria-current="page"]):is(:hover, :focus-visible) .workspace-option-icon {
-            @apply border-indigo-200 bg-indigo-50 text-indigo-700;
         }
     }
 

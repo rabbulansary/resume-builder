@@ -55,18 +55,27 @@ const itemFields = {
     ],
 };
 
-const initialSections = Object.entries(sectionLabels).map(([type, title]) => ({
+const initialSections = Object.entries(sectionLabels).map(([type, title], index) => ({
     type,
     title,
     id: type,
     visible: true,
+    order: index + 1,
     ...(type === 'summary' ? { content: '' } : { items: [] }),
 }));
+
+function syncSectionOrders() {
+    resume.sections.forEach((section, index) => {
+        section.order = index + 1;
+    });
+    resume.section_order = resume.sections.map((s) => s.id);
+}
 
 let resume = {
     schemaVersion: '1.0.0',
     document: { type: 'resume', language: 'en', pageSize: 'A4', contentVariant: 'student-fresher' },
     profile: { fullName: '', contact: { links: [] } },
+    section_order: initialSections.map((s) => s.id),
     sections: initialSections,
 };
 let template = { id: 'classic-ats', version: 1 };
@@ -756,6 +765,44 @@ function sectionEditor(section, sectionIndex) {
     if (section.type === 'projects') {
         box.append(node('p', 'At least one project must be visible.', 'text-sm text-slate-600'));
     }
+
+    const orderRow = node('div', undefined, 'flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100 text-xs text-slate-600');
+    const orderText = node('span', `Section order: ${sectionIndex + 1} of ${resume.sections.length}`, 'font-medium text-slate-700');
+    const orderBtns = node('div', undefined, 'flex items-center gap-1.5');
+    const moveUpBtn = button(
+        '↑ Move up',
+        redraw(() => {
+            if (sectionIndex > 0) {
+                const [moved] = resume.sections.splice(sectionIndex, 1);
+                resume.sections.splice(sectionIndex - 1, 0, moved);
+                syncSectionOrders();
+                activePanel = moved;
+            }
+        }),
+        'ui-button ui-button-secondary py-1 px-2.5 text-xs',
+    );
+    moveUpBtn.disabled = sectionIndex === 0;
+    moveUpBtn.setAttribute('aria-label', `Move ${section.title} section up`);
+
+    const moveDownBtn = button(
+        '↓ Move down',
+        redraw(() => {
+            if (sectionIndex < resume.sections.length - 1) {
+                const [moved] = resume.sections.splice(sectionIndex, 1);
+                resume.sections.splice(sectionIndex + 1, 0, moved);
+                syncSectionOrders();
+                activePanel = moved;
+            }
+        }),
+        'ui-button ui-button-secondary py-1 px-2.5 text-xs',
+    );
+    moveDownBtn.disabled = sectionIndex === resume.sections.length - 1;
+    moveDownBtn.setAttribute('aria-label', `Move ${section.title} section down`);
+
+    orderBtns.append(moveUpBtn, moveDownBtn);
+    orderRow.append(orderText, orderBtns);
+    box.append(orderRow);
+
     const controls = grid(
         property(section, 'title', 'Section heading'),
         property(section, 'visible', 'Show section', 'checkbox', true),
@@ -832,12 +879,48 @@ function sectionEditor(section, sectionIndex) {
         fieldControls.get(section).set('addEntry', { input: addEntry });
         box.append(addEntry);
     }
-    const actions = node('div', undefined, 'flex flex-wrap items-center gap-1.5');
+    const actions = node('div', undefined, 'flex flex-wrap items-center justify-between gap-2 pt-3 mt-3 border-t border-slate-100');
+    const bottomReorder = node('div', undefined, 'flex items-center gap-1.5');
+    const bottomMoveUp = button(
+        'Move section up',
+        redraw(() => {
+            if (sectionIndex > 0) {
+                const [moved] = resume.sections.splice(sectionIndex, 1);
+                resume.sections.splice(sectionIndex - 1, 0, moved);
+                syncSectionOrders();
+                activePanel = moved;
+            }
+        }),
+        'ui-button ui-button-secondary',
+    );
+    bottomMoveUp.disabled = sectionIndex === 0;
+    bottomMoveUp.setAttribute('aria-label', `Move ${section.title} section up`);
+
+    const bottomMoveDown = button(
+        'Move section down',
+        redraw(() => {
+            if (sectionIndex < resume.sections.length - 1) {
+                const [moved] = resume.sections.splice(sectionIndex, 1);
+                resume.sections.splice(sectionIndex + 1, 0, moved);
+                syncSectionOrders();
+                activePanel = moved;
+            }
+        }),
+        'ui-button ui-button-secondary',
+    );
+    bottomMoveDown.disabled = sectionIndex === resume.sections.length - 1;
+    bottomMoveDown.setAttribute('aria-label', `Move ${section.title} section down`);
+    bottomReorder.append(bottomMoveUp, bottomMoveDown);
+
     actions.append(
+        bottomReorder,
         button(
             'Remove section',
-            redraw(() => resume.sections.splice(sectionIndex, 1)),
-            'ui-button ui-button-quiet',
+            redraw(() => {
+                resume.sections.splice(sectionIndex, 1);
+                syncSectionOrders();
+            }),
+            'ui-button ui-button-quiet text-rose-600 hover:text-rose-700',
         ),
     );
     box.append(actions);
@@ -947,6 +1030,7 @@ function renderEditor() {
                         ...(nextType === 'summary' ? { content: '' } : { items: [] }),
                     };
                     resume.sections.push(section);
+                    syncSectionOrders();
                     activePanel = section;
                 }),
             ),
@@ -1000,17 +1084,23 @@ function renderEditor() {
 }
 
 function payload() {
+    syncSectionOrders();
     return {
         resume: {
             ...resume,
+            section_order: resume.sections.map((s) => s.id),
             sections: resume.sections
                 .filter((section) =>
                     section.type === 'summary' ? section.content?.trim() : section.items.length > 0,
                 )
-                .map((section) => {
+                .map((section, index) => {
+                    const baseSection = {
+                        ...section,
+                        order: index + 1,
+                    };
                     if (section.type === 'skill_groups') {
                         return {
-                            ...section,
+                            ...baseSection,
                             items: section.items.map((item) => {
                                 const cleanItem = { ...item };
                                 if (Array.isArray(cleanItem.values)) {
@@ -1022,7 +1112,7 @@ function payload() {
                     }
                     if (section.type === 'experience' || section.type === 'projects') {
                         return {
-                            ...section,
+                            ...baseSection,
                             items: section.items.map((item) => {
                                 const cleanItem = { ...item };
                                 if (Array.isArray(cleanItem.bullets)) {
@@ -1039,7 +1129,7 @@ function payload() {
                             }),
                         };
                     }
-                    return section;
+                    return baseSection;
                 }),
         },
         template,
@@ -1296,8 +1386,41 @@ document.querySelector('#import').addEventListener('change', async (event) => {
     try {
         if (file.size > 512 * 1024) throw new Error('Choose a JSON file smaller than 512 KiB.');
         const parsed = JSON.parse(await file.text());
+        const rawResume = parsed?.resume ?? parsed;
+        if (Array.isArray(rawResume.sections)) {
+            const explicitOrder =
+                rawResume.section_order ||
+                rawResume.sectionOrder ||
+                rawResume.sections_order ||
+                parsed.section_order ||
+                parsed.sectionOrder;
+            if (Array.isArray(explicitOrder)) {
+                rawResume.sections.sort((a, b) => {
+                    let indexA = explicitOrder.indexOf(a.id);
+                    if (indexA === -1) indexA = explicitOrder.indexOf(a.type);
+                    let indexB = explicitOrder.indexOf(b.id);
+                    if (indexB === -1) indexB = explicitOrder.indexOf(b.type);
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                    return 0;
+                });
+            } else if (rawResume.sections.some((s) => s.order !== undefined)) {
+                rawResume.sections.sort((a, b) => {
+                    if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+                    if (a.order !== undefined) return -1;
+                    if (b.order !== undefined) return 1;
+                    return 0;
+                });
+            }
+            rawResume.sections.forEach((s, idx) => {
+                s.order = idx + 1;
+            });
+            rawResume.section_order = rawResume.sections.map((s) => s.id);
+        }
         const response = await api('export/json', parsed?.resume ? parsed : { resume: parsed });
         ({ resume, template, layout = {} } = await response.json());
+        syncSectionOrders();
         activePanel = 'profile';
         renderEditor();
         queuePreview();

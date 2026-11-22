@@ -152,4 +152,53 @@ describe('resume validation and classic ATS template', () => {
             '.education .date { font-size: 9.2pt; font-weight: 700; font-style: normal; text-align: right; }',
         );
     });
+
+    it('renders sections reordered when section_order is provided', () => {
+        const base = resumeSchema.parse(fixture);
+        const customOrder = ['certifications', 'education', 'projects', 'experience', 'skills', 'summary', 'achievements'];
+        const resume = resumeSchema.parse({
+            ...base,
+            section_order: customOrder,
+        });
+        const html = new ClassicAtsTemplate().render(resume);
+        const sectionClasses = [...html.matchAll(/<section class="([^"]+)">/g)].map((match) => match[1]);
+        expect(sectionClasses).toEqual([
+            'certifications',
+            'education',
+            'projects',
+            'experience',
+            'skill_groups',
+            'summary',
+            'bullet_list',
+        ]);
+    });
+
+    it('renders sections reordered when section order property is provided', () => {
+        const base = resumeSchema.parse(fixture);
+        const sectionsWithOrder = base.sections.map((section) => {
+            if (section.type === 'certifications') return { ...section, order: 1 };
+            if (section.type === 'education') return { ...section, order: 2 };
+            if (section.type === 'projects') return { ...section, order: 3 };
+            if (section.type === 'experience') return { ...section, order: 4 };
+            if (section.type === 'skill_groups') return { ...section, order: 5 };
+            if (section.type === 'summary') return { ...section, order: 6 };
+            if (section.type === 'bullet_list') return { ...section, order: 7 };
+            return section;
+        });
+        const resume = resumeSchema.parse({
+            ...base,
+            sections: sectionsWithOrder,
+        });
+        const html = new ClassicAtsTemplate().render(resume);
+        const sectionClasses = [...html.matchAll(/<section class="([^"]+)">/g)].map((match) => match[1]);
+        expect(sectionClasses).toEqual([
+            'certifications',
+            'education',
+            'projects',
+            'experience',
+            'skill_groups',
+            'summary',
+            'bullet_list',
+        ]);
+    });
 });
