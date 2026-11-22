@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-100">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>PDF Document Studio & Sign</title>
+        <link rel="stylesheet" href="/pdf-editor/pdf-editor.css?v=28" />
+        <script src="/pdf-editor/vendor/fabric.min.js"></script>
+        <script src="/pdf-editor/vendor/pdf-lib.min.js"></script>
+    </head>
+    <body class="flex h-full flex-col overflow-hidden text-slate-800 antialiased select-none">
+        <!-- editor-shell:before -->
+
+        <!-- Floating History Dock (Bar 1: Undo / Redo - Vertical) -->
+        <aside
+            id="dock-history"
+            class="fixed left-2.5 sm:left-3.5 top-20 z-30 hidden flex-col items-center gap-1 rounded-xl border border-slate-200/90 bg-white/95 p-1 shadow-lg backdrop-blur-sm transition-all"
+            aria-label="History Controls"
+        >
+            <div class="relative flex items-center group">
+                <button
+                    id="btn-undo"
+                    class="flex size-8 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors opacity-40 cursor-not-allowed"
+                    disabled
+                    aria-label="Undo"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a5 5 0 015 5v2m-15-7l4-4m-4 4l4 4" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Undo <span class="ml-1 text-[10px] text-slate-400">Ctrl+Z</span>
+                </div>
+            </div>
+            <div class="relative flex items-center group">
+                <button
+                    id="btn-redo"
+                    class="flex size-8 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors opacity-40 cursor-not-allowed"
+                    disabled
+                    aria-label="Redo"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2m15-7l-4-4m4 4l-4 4" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Redo <span class="ml-1 text-[10px] text-slate-400">Ctrl+Y</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Floating Tools Dock (Bar 2: Primary Editing Tools - Thinner) -->
+        <aside
+            id="dock-tools"
+            class="fixed left-2.5 sm:left-3.5 top-[162px] z-30 hidden flex-col items-center gap-1 rounded-xl border border-slate-200/90 bg-white/95 p-1 shadow-lg backdrop-blur-sm transition-all"
+            aria-label="Document Tools"
+        >
+            <!-- Select Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-select"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg btn-tool-active"
+                    data-tool="select"
+                    aria-label="Select"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Select & Move <span class="ml-1 text-[10px] text-slate-400">V</span>
+                </div>
+            </div>
+
+            <!-- Hand Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-hand"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg"
+                    data-tool="hand"
+                    aria-label="Hand"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Hand / Pan <span class="ml-1 text-[10px] text-slate-400">H or Space</span>
+                </div>
+            </div>
+
+            <!-- Edit PDF Text Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-edit-text"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg"
+                    data-tool="edit-text"
+                    aria-label="Edit PDF Text"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Edit PDF Text
+                </div>
+            </div>
+
+            <!-- Add Text Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-text"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg"
+                    data-tool="text"
+                    aria-label="Add Text"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Add Text <span class="ml-1 text-[10px] text-slate-400">T</span>
+                </div>
+            </div>
+
+            <!-- Shapes Tool -->
+            <div class="relative flex items-center group">
+                <button id="tool-shapes-btn" class="btn-tool flex size-8 items-center justify-center rounded-lg" data-tool="shape" aria-label="Shapes" aria-controls="tool-options" aria-expanded="false">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Shapes
+                </div>
+            </div>
+
+            <!-- Freehand Pen Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-draw"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg"
+                    data-tool="draw"
+                    aria-label="Pen"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Freehand Pen
+                </div>
+            </div>
+
+            <!-- Highlighter Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-highlighter"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg"
+                    data-tool="highlighter"
+                    aria-label="Highlighter"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Highlighter
+                </div>
+            </div>
+
+            <!-- Table Tool -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-table"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg"
+                    data-tool="table" aria-controls="tool-options" aria-expanded="false"
+                    aria-label="Table"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Insert Table
+                </div>
+            </div>
+
+            <!-- Image Tool -->
+            <div class="relative flex items-center group">
+                <label class="btn-tool flex size-8 items-center justify-center rounded-lg cursor-pointer" aria-label="Add Image">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <input id="image-upload-input" type="file" accept="image/*" class="hidden" />
+                </label>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Add Image
+                </div>
+            </div>
+
+            <div class="my-0.5 h-px w-5 bg-slate-200"></div>
+
+            <!-- Dedicated Sign PDF Tool Button -->
+            <div class="relative flex items-center group">
+                <button
+                    id="tool-sign"
+                    class="btn-tool flex size-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 transition-colors"
+                    data-tool="sign"
+                    aria-label="Sign PDF"
+                >
+                    <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                    </svg>
+                </button>
+                <div class="pointer-events-none absolute left-full ml-2.5 hidden group-hover:flex items-center rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-md whitespace-nowrap z-50">
+                    Sign PDF
+                </div>
+            </div>
+        </aside>
+
+        <div class="editor-right-dock">
+            <!-- Viewport controls -->
+            <aside
+                id="viewport-controls"
+                class="pointer-events-auto hidden flex-col items-center gap-1 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-xl backdrop-blur-sm transition-all"
+                aria-label="Zoom Controls"
+            >
+                <button
+                    id="btn-zoom-in"
+                    class="flex size-8 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    title="Zoom In (Ctrl +)"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </button>
+                <button
+                    id="btn-zoom-out"
+                    class="flex size-8 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    title="Zoom Out (Ctrl -)"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+                    </svg>
+                </button>
+                <div class="my-0.5 h-px w-6 bg-slate-200"></div>
+                <button
+                    id="btn-fit-width"
+                    class="flex size-8 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    title="Fit to Width"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                        />
+                    </svg>
+                </button>
+                <button
+                    id="btn-toggle-grid"
+                    class="flex size-8 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    title="Toggle Guidelines Grid"
+                >
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 10h16M4 15h16M10 4v16M15 4v16"
+                        />
+                    </svg>
+                </button>
+            </aside>
+
+            <aside id="tool-options" class="tool-options" aria-label="Tool options" hidden>
+                <div class="tool-palette" role="group" aria-label="Contextual tool options">
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="draw"
+                        aria-label="Pen color" title="Pen color" aria-controls="pen-colors" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 3c3 4 6 7 6 11a6 6 0 1 1-12 0c0-4 3-7 6-11z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="draw"
+                        aria-label="Pen size" title="Pen size" aria-controls="pen-size" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-5 2v4" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="highlighter"
+                        aria-label="Highlighter color" title="Highlighter color" aria-controls="highlighter-colors" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 3c3 4 6 7 6 11a6 6 0 1 1-12 0c0-4 3-7 6-11z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="highlighter"
+                        aria-label="Highlighter size" title="Highlighter size" aria-controls="highlighter-size" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-5 2v4" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="shape"
+                        aria-label="Shapes" title="Shapes" aria-controls="shapes-menu" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 4h8v8H4zM20 16a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="table"
+                        aria-label="Table options" title="Table options" aria-controls="table-options" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 5h16v14H4zM4 10h16M4 15h16M10 5v14" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="sign"
+                        aria-label="Signature options" title="Signature options" aria-controls="sign-placement-banner" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="m4 15 10-10 4 4L8 19H4zm9-9 4 4M12 20h8" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="text"
+                        aria-label="Text placement" title="Text placement" aria-controls="text-placement-banner" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M5 7V4h14v3M12 4v16m-3 0h6" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-tool="edit-text"
+                        aria-label="Edit text options" title="Edit text options" aria-controls="edit-text-placement-banner" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M4 5h12M4 10h8m-8 5h4m3 5 1-4 6-6 3 3-6 6z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-selection="text"
+                        aria-label="Text formatting" title="Text formatting" aria-controls="prop-text-group" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M5 7V4h14v3M12 4v16m-3 0h6" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-selection="object"
+                        aria-label="Object formatting" title="Object formatting" aria-controls="prop-shape-group" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="m4 15 8-10 8 10zM4 20h16" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button" class="btn-tool size-8 p-0" data-option-selection="any"
+                        aria-label="Object actions" title="Object actions" aria-controls="object-actions" aria-expanded="false" hidden
+                    >
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="m3 8 9-5 9 5-9 5zm0 5 9 5 9-5m-18 5 9 5 9-5" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div id="shapes-menu" class="tool-submenu w-36" hidden>
+                    <button
+                        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                        data-shape="rect"
+                    >
+                        <span class="h-3 w-4 border border-slate-700"></span> Rectangle
+                    </button>
+                    <button
+                        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                        data-shape="circle"
+                    >
+                        <span class="h-3 w-3 rounded-full border border-slate-700"></span> Circle / Oval
+                    </button>
+                    <button
+                        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                        data-shape="line"
+                    >
+                        <span class="h-px w-4 bg-slate-700"></span> Line
+                    </button>
+                    <button
+                        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                        data-shape="arrow"
+                    >
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3"
+                            />
+                        </svg>
+                        Arrow
+                    </button>
+                    <div class="my-1 border-t border-slate-100"></div>
+                    <button
+                        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                        data-shape="whiteout"
+                        title="Cover existing text visually"
+                    >
+                        <span class="h-3 w-4 border border-slate-300 bg-white"></span> Whiteout
+                    </button>
+                </div>
+
+                <!-- Freehand Pen Color & Width Toolbar (Visible when Pen tool is active) -->
+                <div id="pen-colors" class="tool-submenu" hidden>
+                    <!-- Quick Color Swatches -->
+                    <div class="flex flex-col items-center gap-2">
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-slate-300 bg-black hover:scale-110 transition-transform cursor-pointer"
+                            data-pen-color="#000000"
+                            aria-pressed="false" aria-label="Black" title="Black"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-slate-300 bg-blue-600 hover:scale-110 transition-transform cursor-pointer"
+                            data-pen-color="#2563eb"
+                            aria-pressed="false" aria-label="Blue" title="Blue"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-slate-300 bg-red-600 hover:scale-110 transition-transform cursor-pointer"
+                            data-pen-color="#dc2626"
+                            aria-pressed="false" aria-label="Red" title="Red"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-slate-300 bg-emerald-600 hover:scale-110 transition-transform cursor-pointer"
+                            data-pen-color="#16a34a"
+                            aria-pressed="false" aria-label="Green" title="Green"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-slate-300 bg-purple-600 hover:scale-110 transition-transform cursor-pointer"
+                            data-pen-color="#9333ea"
+                            aria-pressed="false" aria-label="Purple" title="Purple"
+                        ></button>
+                        <input
+                            id="prop-pen-color"
+                            type="color"
+                            value="#000000"
+                            class="tool-color rounded-full"
+                            title="Custom Pen Color"
+                        />
+                    </div>
+                </div>
+
+                <div id="pen-size" class="tool-submenu" hidden>
+                    <div class="tool-option-row">
+                        <select id="prop-pen-width" class="tool-field" aria-label="Pen stroke width">
+                            <option value="1">1 px</option>
+                            <option value="2" selected>2 px</option>
+                            <option value="4">4 px</option>
+                            <option value="6">6 px</option>
+                            <option value="10">10 px</option>
+                        </select>
+                        <span class="stroke-preview" aria-hidden="true"><span id="pen-stroke-preview"></span></span>
+                    </div>
+                </div>
+
+                <!-- Highlighter Color & Width Toolbar (Visible when Highlighter tool is active) -->
+                <div id="highlighter-colors" class="tool-submenu" hidden>
+                    <!-- Quick Highlighter Color Swatches -->
+                    <div class="flex flex-col items-center gap-2">
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-amber-300 bg-yellow-300 hover:scale-110 transition-transform cursor-pointer"
+                            data-hl-color="#fde047"
+                            aria-pressed="false" aria-label="Yellow" title="Yellow"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-emerald-300 bg-green-300 hover:scale-110 transition-transform cursor-pointer"
+                            data-hl-color="#4ade80"
+                            aria-pressed="false" aria-label="Neon Green" title="Neon Green"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-sky-300 bg-sky-300 hover:scale-110 transition-transform cursor-pointer"
+                            data-hl-color="#38bdf8"
+                            aria-pressed="false" aria-label="Sky Blue" title="Sky Blue"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-pink-300 bg-pink-300 hover:scale-110 transition-transform cursor-pointer"
+                            data-hl-color="#f472b6"
+                            aria-pressed="false" aria-label="Pink" title="Pink"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-orange-300 bg-orange-300 hover:scale-110 transition-transform cursor-pointer"
+                            data-hl-color="#fb923c"
+                            aria-pressed="false" aria-label="Orange" title="Orange"
+                        ></button>
+                        <button
+                            class="h-4.5 w-4.5 rounded-full border border-purple-300 bg-purple-300 hover:scale-110 transition-transform cursor-pointer"
+                            data-hl-color="#c084fc"
+                            aria-pressed="false" aria-label="Purple" title="Purple"
+                        ></button>
+                        <input
+                            id="prop-highlighter-color"
+                            type="color"
+                            value="#fde047"
+                            class="tool-color rounded-full"
+                            title="Custom Highlighter Color"
+                        />
+                    </div>
+                </div>
+
+                <div id="highlighter-size" class="tool-submenu" hidden>
+                    <div class="tool-option-row">
+                        <select id="prop-highlighter-width" class="tool-field" aria-label="Highlighter stroke width">
+                            <option value="10">10 px</option>
+                            <option value="18" selected>18 px</option>
+                            <option value="26">26 px</option>
+                            <option value="36">36 px</option>
+                        </select>
+                        <span class="stroke-preview" aria-hidden="true"><span id="highlighter-stroke-preview"></span></span>
+                    </div>
+                </div>
+
+                <!-- Text Formatting Group -->
+                <div id="prop-text-group" class="tool-submenu w-52" hidden>
+                    <select
+                        aria-label="Font family"
+                        id="prop-font-family"
+                        class="tool-field w-full"
+                    >
+                        <optgroup label="Popular Sans-Serif">
+                            <option value="Arial" style="font-family: Arial">Arial</option>
+                            <option value="Helvetica" style="font-family: Helvetica">Helvetica</option>
+                            <option value="Calibri" style="font-family: Calibri">Calibri</option>
+                            <option value="Segoe UI" style="font-family: 'Segoe UI'">Segoe UI</option>
+                            <option value="Trebuchet MS" style="font-family: 'Trebuchet MS'">Trebuchet MS</option>
+                            <option value="Verdana" style="font-family: Verdana">Verdana</option>
+                            <option value="Tahoma" style="font-family: Tahoma">Tahoma</option>
+                            <option value="Lucida Grande" style="font-family: 'Lucida Grande'">
+                                Lucida Grande
+                            </option>
+                            <option value="Futura" style="font-family: Futura">Futura</option>
+                            <option value="Gill Sans" style="font-family: 'Gill Sans'">Gill Sans</option>
+                            <option value="Avenir" style="font-family: Avenir">Avenir</option>
+                            <option value="Impact" style="font-family: Impact">Impact</option>
+                        </optgroup>
+                        <optgroup label="Modern Sans">
+                            <option value="Inter" style="font-family: Inter, sans-serif">Inter</option>
+                            <option value="Roboto" style="font-family: Roboto, sans-serif">Roboto</option>
+                            <option value="Open Sans" style="font-family: 'Open Sans', sans-serif">
+                                Open Sans
+                            </option>
+                            <option value="Lato" style="font-family: Lato, sans-serif">Lato</option>
+                            <option value="Montserrat" style="font-family: Montserrat, sans-serif">
+                                Montserrat
+                            </option>
+                            <option value="Poppins" style="font-family: Poppins, sans-serif">Poppins</option>
+                            <option value="Source Sans Pro" style="font-family: 'Source Sans Pro', sans-serif">
+                                Source Sans Pro
+                            </option>
+                            <option value="Nunito" style="font-family: Nunito, sans-serif">Nunito</option>
+                            <option value="Raleway" style="font-family: Raleway, sans-serif">Raleway</option>
+                            <option value="Ubuntu" style="font-family: Ubuntu, sans-serif">Ubuntu</option>
+                        </optgroup>
+                        <optgroup label="Classic Serif">
+                            <option value="Times New Roman" style="font-family: 'Times New Roman'">
+                                Times New Roman
+                            </option>
+                            <option value="Georgia" style="font-family: Georgia">Georgia</option>
+                            <option value="Garamond" style="font-family: Garamond">Garamond</option>
+                            <option value="Cambria" style="font-family: Cambria">Cambria</option>
+                            <option value="Palatino" style="font-family: 'Palatino Linotype', Palatino">
+                                Palatino
+                            </option>
+                            <option value="Baskerville" style="font-family: Baskerville">Baskerville</option>
+                            <option value="Book Antiqua" style="font-family: 'Book Antiqua'">Book Antiqua</option>
+                            <option value="Didot" style="font-family: Didot">Didot</option>
+                            <option value="Merriweather" style="font-family: Merriweather, serif">
+                                Merriweather
+                            </option>
+                            <option value="Playfair Display" style="font-family: 'Playfair Display', serif">
+                                Playfair Display
+                            </option>
+                            <option value="Lora" style="font-family: Lora, serif">Lora</option>
+                            <option value="PT Serif" style="font-family: 'PT Serif', serif">PT Serif</option>
+                        </optgroup>
+                        <optgroup label="Monospace / Code">
+                            <option value="Courier New" style="font-family: 'Courier New'">Courier New</option>
+                            <option value="Consolas" style="font-family: Consolas">Consolas</option>
+                            <option value="Monaco" style="font-family: Monaco">Monaco</option>
+                            <option value="Menlo" style="font-family: Menlo">Menlo</option>
+                            <option value="Lucida Console" style="font-family: 'Lucida Console'">
+                                Lucida Console
+                            </option>
+                            <option value="SFMono-Regular" style="font-family: 'SFMono-Regular'">SF Mono</option>
+                            <option value="Roboto Mono" style="font-family: 'Roboto Mono', monospace">
+                                Roboto Mono
+                            </option>
+                            <option value="Fira Code" style="font-family: 'Fira Code', monospace">Fira Code</option>
+                        </optgroup>
+                        <optgroup label="Handwriting & Cursive">
+                            <option value="Comic Sans MS" style="font-family: 'Comic Sans MS'">
+                                Comic Sans MS
+                            </option>
+                            <option value="Brush Script MT" style="font-family: 'Brush Script MT', cursive">
+                                Brush Script MT
+                            </option>
+                            <option value="Bradley Hand" style="font-family: 'Bradley Hand', cursive">
+                                Bradley Hand
+                            </option>
+                            <option value="Caveat" style="font-family: Caveat, cursive">Caveat</option>
+                            <option value="Dancing Script" style="font-family: 'Dancing Script', cursive">
+                                Dancing Script
+                            </option>
+                            <option value="Pacifico" style="font-family: Pacifico, cursive">Pacifico</option>
+                            <option value="Copperplate" style="font-family: Copperplate">Copperplate</option>
+                            <option value="Papyrus" style="font-family: Papyrus">Papyrus</option>
+                        </optgroup>
+                    </select>
+
+                    <div class="tool-option-row">
+                        <label class="tool-option-row">
+                            <input id="prop-font-size" type="number" min="6" max="120" value="14"
+                                class="tool-field w-14" aria-label="Font size in points" />
+                            <span aria-hidden="true">pt</span>
+                        </label>
+                        <select id="prop-text-align" class="tool-field" aria-label="Text alignment">
+                            <option value="left">Left aligned</option>
+                            <option value="center">Centered</option>
+                            <option value="right">Right aligned</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <button
+                            id="prop-bold"
+                            class="h-7 w-7 rounded border border-slate-200 bg-white font-bold hover:bg-slate-50"
+                            title="Bold"
+                        >
+                            B
+                        </button>
+                        <button
+                            id="prop-italic"
+                            class="h-7 w-7 rounded border border-slate-200 bg-white italic hover:bg-slate-50"
+                            title="Italic"
+                        >
+                            I
+                        </button>
+                        <button
+                            id="prop-underline"
+                            class="h-7 w-7 rounded border border-slate-200 bg-white underline hover:bg-slate-50"
+                            title="Underline"
+                        >
+                            U
+                        </button>
+
+                        <input
+                            id="prop-text-color"
+                            type="color"
+                            value="#000000"
+                            class="tool-color"
+                            aria-label="Text color" title="Text color"
+                        />
+                    </div>
+                </div>
+
+                <!-- Shape Formatting Group -->
+                <div id="prop-shape-group" class="tool-submenu w-48" hidden>
+                    <div class="tool-option-row">
+                        <label class="tool-option-row">
+                            Fill
+                            <input id="prop-fill-color" type="color" value="#ffffff" class="tool-color" />
+                        </label>
+                        <button id="prop-no-fill" type="button" class="btn-secondary" aria-pressed="false">
+                            No fill
+                        </button>
+                        <label class="tool-option-row">
+                            Stroke
+                            <input id="prop-stroke-color" type="color" value="#000000" class="tool-color" />
+                        </label>
+                    </div>
+                    <div class="tool-option-row">
+                        <label class="tool-option-row">
+                            <input id="prop-stroke-width" type="number" min="0" max="20" value="2"
+                                class="tool-field w-14" aria-label="Border width in pixels" />
+                            <span aria-hidden="true">px</span>
+                        </label>
+                        <span class="stroke-preview" aria-hidden="true"><span id="border-stroke-preview"></span></span>
+                    </div>
+                </div>
+
+                <!-- Common Object Actions -->
+                <div id="object-actions" class="tool-submenu" hidden>
+                    <div class="flex items-center gap-1">
+                        <button
+                            id="prop-bring-forward"
+                            class="rounded p-1 text-slate-600 hover:bg-slate-100"
+                            title="Bring Forward"
+                        >
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M5 15l7-7 7 7"
+                                />
+                            </svg>
+                        </button>
+                        <button
+                            id="prop-send-backward"
+                            class="rounded p-1 text-slate-600 hover:bg-slate-100"
+                            title="Send Backward"
+                        >
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M19 9l-7 7-7-7"
+                                />
+                            </svg>
+                        </button>
+                        <button
+                            id="prop-delete"
+                            class="rounded p-1 text-rose-600 hover:bg-rose-50"
+                            title="Delete Element (Delete)"
+                        >
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Signature Tool Placement Banner (Visible when Signature Tool is primed) -->
+                <div id="sign-placement-banner" class="tool-submenu w-52" hidden>
+                    <p>Click a spot on the page to place your signature.</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button id="btn-open-sign-pad-now" class="btn-action">Open signature pad</button>
+                        <button id="btn-cancel-sign-tool" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <!-- Text Tool Placement Banner -->
+                <div id="text-placement-banner" class="tool-submenu w-52" hidden>
+                    <p>Click the page to place text, or click existing text to edit.</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button id="btn-add-text-center" class="btn-action">Place at center</button>
+                        <button id="btn-cancel-text-tool" class="btn-secondary">Done</button>
+                    </div>
+                </div>
+
+                <!-- Edit PDF Text Tool Placement Banner (Visible when Edit PDF Text tool is active) -->
+                <div id="edit-text-placement-banner" class="tool-submenu w-52" hidden>
+                    <p>Click a line or drag a box over the text you want to edit.</p>
+                    <button id="btn-cancel-edit-text-tool" class="btn-secondary">Done</button>
+                </div>
+                <div id="table-options" class="tool-submenu w-52" hidden>
+                    <label class="tool-option-row">
+                        Rows
+                        <input
+                            id="table-rows"
+                            type="number"
+                            min="1"
+                            max="15"
+                            value="3"
+                            class="h-7 w-14 rounded border border-slate-200 bg-white px-1 text-center"
+                        />
+                    </label>
+                    <label class="tool-option-row">
+                        Columns
+                        <input
+                            id="table-cols"
+                            type="number"
+                            min="1"
+                            max="10"
+                            value="3"
+                            class="h-7 w-14 rounded border border-slate-200 bg-white px-1 text-center"
+                        />
+                    </label>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button id="btn-insert-table" class="btn-action">Insert table</button>
+                        <button id="btn-cancel-table" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Main Workspace Area -->
+        <main class="relative flex min-h-0 flex-1 flex-col bg-slate-200/80">
+            <div id="document-actions" class="document-actions" role="group" aria-label="PDF document actions" hidden>
+                <button id="btn-upload-pdf" type="button" class="btn-secondary" aria-label="Upload PDF">
+                    <svg aria-hidden="true" class="h-3.5 w-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                        />
+                    </svg>
+                </button>
+                <input id="pdf-file-input" type="file" accept="application/pdf" hidden />
+                <button id="btn-add-page" type="button" class="btn-secondary" aria-label="Add Page">
+                    <svg aria-hidden="true" class="h-3.5 w-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </button>
+                <button id="btn-export-pdf" type="button" class="btn-action" aria-label="Download PDF">
+                    <svg aria-hidden="true" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                        />
+                    </svg>
+                </button>
+            </div>
+
+            <div id="workspace-container" class="relative flex min-h-0 flex-1 overflow-auto">
+                <!-- Empty State / Dropzone -->
+                <div
+                    id="empty-state"
+                    class="m-auto flex max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white p-12 text-center shadow-xs"
+                >
+                    <div
+                        class="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 shadow-2xs mb-4"
+                    >
+                        <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="1.75"
+                                d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
+                        </svg>
+                    </div>
+                    <h2 class="text-base font-bold text-slate-900 mb-1">Upload a PDF to Edit & Sign</h2>
+                    <p class="text-xs text-slate-500 mb-6 max-w-sm">
+                        Upload an existing PDF to modify content, add text, shapes, tables, and insert transparent
+                        signatures with one click.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <label class="btn-action cursor-pointer">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                                />
+                            </svg>
+                            <span>Choose PDF File</span>
+                            <input id="empty-file-input" type="file" accept="application/pdf" class="hidden" />
+                        </label>
+                        <button id="btn-start-blank" class="btn-secondary">
+                            <svg class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span>Start with Blank A4</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-Page Document Viewport (populated dynamically) -->
+                <div id="pages-viewport" class="hidden flex flex-col items-center gap-8">
+                    <!-- Pages dynamically inserted here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- ================= MODALS ================= -->
+
+        <!-- Signature Tool Modal (Draw or Upload & Extract Background) -->
+        <div
+            id="signature-modal"
+            class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+        >
+            <div
+                class="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150"
+            >
+                <!-- Modal Header -->
+                <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+                    <div class="flex items-center gap-2">
+                        <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                                />
+                            </svg>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-900">Add Signature</h3>
+                    </div>
+                    <button
+                        id="modal-close-btn"
+                        class="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                    >
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12"
+                            />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Tabs Switcher -->
+                <div class="flex border-b border-slate-200 bg-slate-50/70 px-5">
+                    <button
+                        id="tab-draw-btn"
+                        class="flex items-center gap-1.5 border-b-2 border-indigo-600 px-4 py-2.5 text-xs font-semibold text-indigo-600 transition-colors"
+                    >
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                            />
+                        </svg>
+                        <span>Draw on Canvas</span>
+                    </button>
+                    <button
+                        id="tab-upload-btn"
+                        class="flex items-center gap-1.5 border-b-2 border-transparent px-4 py-2.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+                    >
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                            />
+                        </svg>
+                        <span>Upload Image & Extract</span>
+                    </button>
+                </div>
+
+                <!-- Tab 1: Draw Signature -->
+                <div id="tab-draw-content" class="p-5 flex flex-col gap-3">
+                    <div class="flex items-center justify-between text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-500 font-medium">Ink:</span>
+                            <button
+                                class="ink-color-btn h-5 w-5 rounded-full bg-black ring-2 ring-indigo-500 ring-offset-1"
+                                data-color="#000000"
+                                title="Black"
+                            ></button>
+                            <button
+                                class="ink-color-btn h-5 w-5 rounded-full bg-[#0f2b5c] hover:ring-1 hover:ring-slate-400"
+                                data-color="#0f2b5c"
+                                title="Navy Blue"
+                            ></button>
+                            <button
+                                class="ink-color-btn h-5 w-5 rounded-full bg-[#1d4ed8] hover:ring-1 hover:ring-slate-400"
+                                data-color="#1d4ed8"
+                                title="Royal Blue"
+                            ></button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-500 font-medium">Stroke:</span>
+                            <select
+                                id="draw-stroke-width"
+                                class="h-6 rounded border border-slate-200 bg-white px-1.5 text-xs font-medium"
+                            >
+                                <option value="2">Fine (2px)</option>
+                                <option value="3" selected>Medium (3px)</option>
+                                <option value="4">Bold (4px)</option>
+                            </select>
+                            <button
+                                id="btn-clear-draw"
+                                class="rounded px-2 py-0.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Drawing Canvas Container -->
+                    <div
+                        class="relative h-44 w-full rounded-xl border border-dashed border-slate-300 bg-white shadow-inner flex items-center justify-center overflow-hidden"
+                    >
+                        <canvas
+                            id="signature-draw-canvas"
+                            width="460"
+                            height="176"
+                            class="cursor-crosshair touch-none"
+                        ></canvas>
+                        <span
+                            id="draw-hint"
+                            class="pointer-events-none absolute bottom-3 text-[11px] font-medium text-slate-400"
+                            >Sign your name with mouse or finger</span
+                        >
+                    </div>
+                </div>
+
+                <!-- Tab 2: Upload Image & Extract Background -->
+                <div id="tab-upload-content" class="hidden p-5 flex flex-col gap-3">
+                    <div
+                        class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 text-center"
+                    >
+                        <input id="sig-image-file-input" type="file" accept="image/*" class="hidden" />
+                        <label for="sig-image-file-input" class="cursor-pointer flex flex-col items-center">
+                            <svg
+                                class="h-7 w-7 text-indigo-500 mb-1"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                />
+                            </svg>
+                            <span class="text-xs font-semibold text-indigo-600">Choose a photo of your signature</span>
+                            <span class="text-[10px] text-slate-400"
+                                >JPG, PNG (Paper background is automatically removed)</span
+                            >
+                        </label>
+                    </div>
+
+                    <!-- Extraction Controls & Live Transparent Preview -->
+                    <div id="sig-extract-preview-container" class="hidden space-y-3">
+                        <div class="flex items-center justify-between text-xs">
+                            <label class="font-medium text-slate-700 flex items-center gap-1.5">
+                                <span>Background Cutoff Sensitivity:</span>
+                                <span id="cutoff-val" class="font-semibold text-indigo-600">210</span>
+                            </label>
+                            <input
+                                id="cutoff-slider"
+                                type="range"
+                                min="100"
+                                max="250"
+                                value="210"
+                                class="w-32 cursor-pointer accent-indigo-600"
+                            />
+                        </div>
+
+                        <!-- Ink Recoloring Preset -->
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-slate-500 font-medium">Output Ink Color:</span>
+                            <div class="flex items-center gap-2">
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="sig-ink-recolor"
+                                        value="black"
+                                        checked
+                                        class="accent-indigo-600"
+                                    />
+                                    <span>Black</span>
+                                </label>
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="radio" name="sig-ink-recolor" value="navy" class="accent-indigo-600" />
+                                    <span>Navy Blue</span>
+                                </label>
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="sig-ink-recolor"
+                                        value="original"
+                                        class="accent-indigo-600"
+                                    />
+                                    <span>Original</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Checkerboard Canvas Preview for Transparency Verification -->
+                        <div
+                            class="relative h-32 w-full rounded-xl border border-slate-200 bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#ffffff_0%_50%)] bg-[length:16px_16px] flex items-center justify-center overflow-hidden p-2"
+                        >
+                            <img
+                                id="sig-extracted-preview-img"
+                                class="max-h-full max-w-full object-contain"
+                                alt="Extracted Signature"
+                            />
+                        </div>
+                        <p class="text-[10px] text-slate-400 text-center">
+                            Background stripped cleanly to transparent outline
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-3">
+                    <span id="sig-coords-badge" class="text-[11px] font-medium text-slate-500"
+                        >Placement: Target PDF location</span
+                    >
+                    <div class="flex items-center gap-2">
+                        <button id="modal-cancel-btn" class="btn-secondary">Cancel</button>
+                        <button id="modal-confirm-sig-btn" class="btn-action">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M5 13l4 4L19 7"
+                                />
+                            </svg>
+                            <span>Insert Signature</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- editor-shell:after -->
+
+        <!-- Application Entry Module -->
+        <script type="module" src="/pdf-editor/js/pdf-editor.js?v=26"></script>
+    </body>
+</html>

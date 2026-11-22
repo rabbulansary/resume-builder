@@ -1,0 +1,23 @@
+{
+  "name": "@resume-builder/frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "css": "tailwindcss -i editors/editor.tailwind.css -o public/resumes/editor.css --minify && tailwindcss -i editors/pdf-editor.tailwind.css -o public/pdf-editor/pdf-editor.css --minify",
+    "dev": "pnpm css && next dev",
+    "build": "pnpm css && next build",
+    "start": "next start",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/cli": "^4.3.5",
+    "pdf-lib": "^1.17.1",
+    "tailwindcss": "^4.3.5"
+  }
+}
